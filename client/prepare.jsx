@@ -2,17 +2,21 @@ import React from 'react';
 import { Button } from './components.jsx';
 import { resumeOptions, versionEntry } from './model.js';
 import { realtimeUnavailable } from './voice/realtime-call.js';
+import { ScoreStep } from './prepare-score.jsx';
+import { goalForJob, openRewrite, previousScore, resumeScore, rewriteInstructions } from './score.js';
 
 /**
- * Prepare flow: job description, resume, then start, on one vertical axis.
+ * Prepare flow: job description, resume, score, then start, on one vertical axis.
  *
  * It only sequences actions the Host already has (material.add / fetch /
- * upload / confirm, goal.create, goal.linkMaterial, interview start). Progress
- * is derived from saved facts: a step counts as done when its material version
- * exists and the user confirmed it, never because a button was pressed.
+ * upload / confirm / update, goal.create, goal.linkMaterial, assessment.run,
+ * rewrite.run / accept, interview start). Progress is derived from saved
+ * facts: a step counts as done when its material version exists and the user
+ * confirmed it, never because a button was pressed. The score step passes at
+ * 80, or when the user chose to skip it for this resume version.
  */
 export const PREPARE_DEFAULTS = Object.freeze({ role: '', jobSource: 'paste', jobText: '', jobUrl: '', jobVersionId: null,
-  resumeSource: 'file', resumeText: '', resumeVersionId: null, goalId: null, language: 'zh', questionCount: 5, mode: 'realtime' });
+  resumeSource: 'file', resumeText: '', resumeVersionId: null, goalId: null, scoreSkippedFor: null, language: 'zh', questionCount: 5, mode: 'realtime' });
 export const QUESTION_COUNTS = [3, 5, 8];
 
 function entryOfKind(state, versionId, kind) {
@@ -26,8 +30,21 @@ export function prepareProgress(state, draft) {
   const resume = entryOfKind(state, value.resumeVersionId, 'resume');
   const jobReady = Boolean(job?.version.confirmed), resumeReady = Boolean(resume?.version.confirmed);
   const role = value.role.trim();
-  return { value, job, resume, role, jobReady, resumeReady, ready: jobReady && resumeReady && role.length > 0,
-    current: !jobReady ? 'job' : !resumeReady ? 'resume' : 'start' };
+  const ready = jobReady && resumeReady && role.length > 0;
+  const goal = ready ? goalForJob(state, value.goalId, job.version.id) : null;
+  const score = resumeScore(state, { goalId: goal?.id, resumeVersionId: resume?.version.id, jobVersionId: job?.version.id });
+  const skipped = ready && value.scoreSkippedFor === resume.version.id;
+  const cleared = ready && (score.pass || skipped);
+  return { value, job, resume, role, jobReady, resumeReady, ready, goal, score, skipped, cleared,
+    current: !jobReady ? 'job' : !resumeReady ? 'resume' : !cleared ? 'score' : 'start' };
+}
+
+function failureText(error, t) {
+  const code = error?.code || '';
+  if (code === 'MODEL_NOT_CONFIGURED') return t('prepFailModel');
+  if (code === 'MODEL_TIMEOUT') return t('prepFailTimeout');
+  if (code.startsWith('REWRITE_')) return t('prepFailRewrite');
+  return t('prepFailGeneric');
 }
 
 const excerpt = (text, length = 400) => String(text || '').trim().slice(0, length);
@@ -51,10 +68,10 @@ function SavedDocument({ entry, t, busy, onConfirm, onReplace, onContinue }) {
   </div>;
 }
 
-export function Prepare({ t, state, busy = false, draft, onDraftChange, action, upload, startInterview, workspaces = [], workspaceId = '', onWorkspace,
+export function Prepare({ t, state, busy = false, draft, onDraftChange, action, task, upload, startInterview, workspaces = [], workspaceId = '', onWorkspace,
   onManageWorkspaces, realtimeApi, openRealtimeSettings, onSkip }) {
   const progress = prepareProgress(state, draft);
-  const { value, job, resume, role, jobReady, resumeReady, ready } = progress;
+  const { value, job, resume, role, jobReady, resumeReady, ready, goal, score, skipped, cleared } = progress;
   const latest = React.useRef(value); latest.current = value;
   const update = patch => { latest.current = { ...latest.current, ...patch }; onDraftChange?.(latest.current); };
 
@@ -142,18 +159,83 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
     const saved = await action('material.add', { title: t('resume'), kind: 'resume', text: value.resumeText });
     if (!saved) return;
     update({ resumeVersionId: saved.latestVersionId });
-    if (await action('material.confirm', { versionId: saved.latestVersionId })) slide('start');
+    if (await action('material.confirm', { versionId: saved.latestVersionId })) toScore(saved.latestVersionId);
   };
-  const confirmResume = async () => { if (await action('material.confirm', { versionId: resume.version.id })) slide('start'); };
-  const start = async () => {
-    if (!ready || busy || voiceBlocked) return;
-    // A retry after a failed start reuses the goal it already created.
-    let goalId = state.goals.some(row => row.id === latest.current.goalId) ? latest.current.goalId : null;
-    if (!goalId) {
-      const goal = await action('goal.create', { title: role });
-      if (!goal) return;
-      goalId = goal.id; update({ goalId });
+  const confirmResume = async () => { if (await action('material.confirm', { versionId: resume.version.id })) toScore(resume.version.id); };
+  // The goal is made when scoring starts: the fit assessment reads the job through it.
+  // A retry reuses the goal it already made, or one already linked to this job version.
+  const ensureGoal = async act => {
+    let current = goalForJob(state, latest.current.goalId, job.version.id);
+    if (!current) {
+      current = await act('goal.create', { title: role });
+      if (!current) return null;
     }
+    if (current.id !== latest.current.goalId) update({ goalId: current.id });
+    const linked = current.materialLinks?.some(link => link.kind === 'job' && link.versionId === job.version.id);
+    if (!linked && !await act('goal.linkMaterial', { goalId: current.id, versionId: job.version.id })) return null;
+    return current.id;
+  };
+
+  // Scoring, revising and editing run as one guarded task each, so the two
+  // assessments run side by side and a failure stays in the step.
+  const [working, setWorking] = React.useState(null);
+  const [failure, setFailure] = React.useState(null);
+  const [panel, setPanel] = React.useState(null);
+  const runStep = (name, operation) => (task ?? (body => body(action)))(async act => {
+    setWorking(name); setFailure(null);
+    try { return await operation(act); }
+    catch (error) { if (error?.name !== 'AbortError' && alive.current) setFailure(failureText(error, t)); return undefined; }
+    finally { if (alive.current) setWorking(null); }
+  });
+  const assess = async (act, versionId) => {
+    const goalId = await ensureGoal(act);
+    if (!goalId) return;
+    setWorking('score');
+    const current = resumeScore(state, { goalId, resumeVersionId: versionId, jobVersionId: job.version.id });
+    // Only what this resume version still lacks; a fresh version needs both.
+    const kinds = versionId === resume?.version.id ? current.missing : ['fit', 'resume'];
+    await Promise.all(kinds.map(kind => act('assessment.run', { kind, versionId, goalId })));
+  };
+  // Called right after a confirmation too, when this render's state is not refreshed yet,
+  // so it takes the version id instead of reading readiness from the closure.
+  const scoreNow = versionId => { if (versionId && role && job) void runStep('score', act => assess(act, versionId)); };
+  function toScore(versionId) { slide('score'); scoreNow(versionId); }
+  React.useEffect(() => { setPanel(null); setFailure(null); }, [resume?.version.id, job?.version.id]);
+  const revise = () => {
+    if (!goal || busy) return;
+    const existing = openRewrite(state, goal.id, resume.version.id);
+    if (existing) { setPanel({ kind: 'rewrite', rewrite: existing, selected: existing.items.map(item => item.id) }); return; }
+    void runStep('revise', async act => {
+      const proposal = await act('rewrite.run', { versionId: resume.version.id, goalId: goal.id, instructions: rewriteInstructions(score, t) });
+      if (proposal && alive.current) setPanel({ kind: 'rewrite', rewrite: proposal, selected: proposal.items.map(item => item.id) });
+    });
+  };
+  // Picking the changes and pressing apply is the user's confirmation of the new version.
+  const adopt = async (act, versionId) => {
+    if (!await act('material.confirm', { versionId })) return;
+    update({ resumeVersionId: versionId, scoreSkippedFor: null });
+    if (alive.current) setPanel(null);
+    await assess(act, versionId);
+  };
+  const applyRewrite = () => {
+    if (panel?.kind !== 'rewrite' || !panel.selected.length || busy) return;
+    void runStep('apply', async act => {
+      const accepted = await act('rewrite.accept', { rewriteId: panel.rewrite.id, itemIds: panel.selected });
+      if (accepted?.version?.id) await adopt(act, accepted.version.id);
+    });
+  };
+  const saveEdit = () => {
+    if (panel?.kind !== 'edit' || !panel.text.trim() || busy) return;
+    void runStep('edit', async act => {
+      const saved = await act('material.update', { materialId: resume.material.id, text: panel.text });
+      if (saved?.latestVersionId && saved.latestVersionId !== resume.version.id) await adopt(act, saved.latestVersionId);
+    });
+  };
+
+  const start = async () => {
+    if (!ready || !cleared || busy || voiceBlocked) return;
+    let goalId = goal?.id;
+    if (!goalId) { goalId = await action('goal.create', { title: role }).then(row => row?.id); if (!goalId) return; update({ goalId }); }
     if (!await action('goal.linkMaterial', { goalId, versionId: job.version.id })) return;
     await startInterview({ goalId, versionId: resume.version.id, language: value.language, questionCount: value.questionCount, mode: value.mode });
   };
@@ -210,7 +292,7 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
       <div className="zj-side is-r"><div className="zj-block zj-reveal">
         <h2>{t('prepYours')}</h2>
         <p className="zj-block-note">{t('prepYoursNote')}</p>
-        {resume ? <SavedDocument entry={resume} t={t} busy={busy} onConfirm={confirmResume} onReplace={() => update({ resumeVersionId: null })} onContinue={() => slide('start')}/> : value.resumeSource === 'file' ? <>
+        {resume ? <SavedDocument entry={resume} t={t} busy={busy} onConfirm={confirmResume} onReplace={() => update({ resumeVersionId: null })} onContinue={() => { slide('score'); if (score.status === 'none' || score.status === 'partial') scoreNow(resume.version.id); }}/> : value.resumeSource === 'file' ? <>
           <label className={`zj-drop${dragging ? ' is-over' : ''}${busy ? ' is-disabled' : ''}`}
             onDragOver={event => { event.preventDefault(); if (!busy) setDragging(true); }} onDragLeave={() => setDragging(false)}
             onDrop={event => { event.preventDefault(); setDragging(false); void importResume(event.dataTransfer?.files?.[0]); }}>
@@ -235,9 +317,15 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
       </div></div>
     </section>
 
+    <ScoreStep t={t} busy={busy} ready={ready} score={score} previous={previousScore(state, { goalId: goal?.id, jobVersionId: job?.version.id, resumeVersionId: resume?.version.id }, resume?.material.id)}
+      working={working} failure={failure} panel={panel} skipped={skipped}
+      onScore={() => { if (ready && !busy) scoreNow(resume.version.id); }} onRevise={revise} onEdit={() => setPanel({ kind: 'edit', text: resume.version.text })}
+      onSkip={() => { update({ scoreSkippedFor: resume.version.id }); slide('start'); }} onContinue={() => slide('start')}
+      onPanel={setPanel} onApply={applyRewrite} onSave={saveEdit}/>
+
     <section className="zj-sec is-start" data-step="start" aria-label={t('prepStart')}>
-      <div className={`zj-axis is-short${ready ? ' is-lit' : ''}`} aria-hidden="true"/>
-      <div className={`zj-node ${ready ? 'is-current' : ''}`} aria-hidden="true"/>
+      <div className={`zj-axis is-short${cleared ? ' is-lit' : ''}`} aria-hidden="true"/>
+      <div className={`zj-node ${cleared ? 'is-current' : ''}`} aria-hidden="true"/>
       <div className="zj-side is-l"><div className="zj-block zj-reveal">
         <span className="zj-block-label">{t('goals')}</span>
         <div className={`zj-block-value${jobReady ? '' : ' is-missing'}`}>{jobReady ? role || job.material.title : t('prepMissing')}</div>
@@ -246,10 +334,17 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
       <div className="zj-side is-r"><div className="zj-block zj-reveal">
         <span className="zj-block-label">{t('resume')}</span>
         <div className={`zj-block-value${resumeReady ? '' : ' is-missing'}`}>{resumeReady ? resume.material.title : t(resume ? 'prepUnconfirmed' : 'prepMissing')}</div>
+        {resumeReady && typeof score.total === 'number' && <span className="zj-block-label">{t('prepScoreOf', { score: score.total })}{skipped && !score.pass ? ` · ${t('prepSkipped')}` : ''}</span>}
         <div className="zj-flow-actions" style={{ marginTop: 4 }}><Button quiet onClick={() => slide('resume')}>{t('prepBackResume')}</Button></div>
       </div></div>
       <div className="zj-bar zj-reveal">
-        {!ready ? <p>{t('prepNotReady')}</p> : <div className="zj-fade">
+        {!ready ? <p>{t('prepNotReady')}</p> : !cleared ? <div className="zj-fade">
+          <p>{typeof score.total === 'number' ? t('prepGateBelow', { score: score.total }) : t('prepGateNone')}</p>
+          <div className="zj-flow-actions" style={{ justifyContent: 'center' }}>
+            <Button primary disabled={busy} onClick={() => slide('score')}>{t('prepGateBack')}</Button>
+            {score.status !== 'none' && score.status !== 'partial' && <Button quiet disabled={busy} onClick={() => update({ scoreSkippedFor: resume.version.id })}>{t('prepSkipScore')}</Button>}
+          </div>
+        </div> : <div className="zj-fade">
           <div className="zj-bar-row">
             <Options label={t('interviewMode')} values={['realtime', 'text']} value={value.mode} disabled={busy} onChange={mode => update({ mode })} render={mode => t(mode === 'realtime' ? 'realtimeCall' : 'textInterview')}/>
             <Options label={t('questions')} values={QUESTION_COUNTS} value={value.questionCount} disabled={busy} onChange={questionCount => update({ questionCount })} render={number => t('prepCount', { number })}/>

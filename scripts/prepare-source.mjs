@@ -22,6 +22,8 @@ function permitted(name) {
   validatePackedPath(name);
   if (name === 'src/materials/runtime' || name.startsWith('src/materials/runtime/')) fail('GENERATED_SOURCE_FILE', name);
   if (rootFiles.includes(name)) return;
+  // Shell helpers are reviewed source only under scripts/ (local setup, never packed into the plugin).
+  if (/^scripts\/[^/]+\.sh$/.test(name)) return;
   if (!directories.includes(name.split('/')[0]) || !/\.(?:[cm]?js|jsx|ts|tsx|json|md|ya?ml|svg|css|ps1|cs|otf|txt)$/.test(name)) fail('UNREVIEWED_SOURCE_FILE', name);
   if (name.startsWith('assets/') && !Object.hasOwn(assetHashes, name)) fail('UNREVIEWED_SOURCE_ASSET', name);
 }

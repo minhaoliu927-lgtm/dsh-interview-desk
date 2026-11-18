@@ -9,7 +9,7 @@ import { createFakeHost } from './fake-host.js';
 const query = new URLSearchParams(location.search);
 const dictionary = query.get('lang') === 'en' ? en : zh;
 const t = (key, params = {}) => String(dictionary[key] ?? key).replace(/\{([^}]+)\}/g, (_match, name) => params[name] ?? name);
-const host = createFakeHost({ seed: query.get('seed') || 'empty', voice: query.get('voice') || 'ready' });
+const host = createFakeHost({ seed: query.get('seed') || 'empty', voice: query.get('voice') || 'ready', model: query.get('model') || 'ready' });
 const client = createCareerClient(host.api, { intervalMs: 1500 });
 const useStore = store => selector => selector(React.useSyncExternalStore(store.subscribe, store.getSnapshot));
 const useCareer = useStore(client.source), useNativeSessions = useStore(host.sessions), useWorkspaceChoices = useStore(host.workspaces);

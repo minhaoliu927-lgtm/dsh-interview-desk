@@ -4,6 +4,7 @@ import deskCss from './desk-styles.css';
 import shellCss from './css/shell.css';
 import flowCss from './css/flow.css';
 import roomCss from './css/room.css';
+import scoreCss from './css/score.css';
 import { Prepare } from './prepare.jsx';
 import { Button, GoalForm, Mark, MaterialForm, MaterialPicker, Modal, Tabs, TaskCancelContext, createSubmissionGuard } from './components.jsx';
 import { Materials, GoalMaterials } from './materials.jsx';
@@ -88,6 +89,8 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
   const navigationRef = React.useRef(navigation); navigationRef.current = navigation;
   const [dockOpen, setDockOpen] = React.useState(true);
   const [prepareSkipped, setPrepareSkipped] = React.useState(false);
+  // Scoring creates the goal before the interview starts; stay in the flow until it is left or started.
+  const [prepareHeld, setPrepareHeld] = React.useState(false);
   const [narrow, setNarrow] = React.useState(false);
   const [context, setContext] = React.useState(null);
   const [contextNotice, setContextNotice] = React.useState(null);
@@ -281,19 +284,20 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
   // A new user lands in the prepare flow; it and a running interview take the
   // whole panel, without the workbench rail and bars around them.
   const firstRun = snapshot.ready && !state.goals.length && !state.interviews.length;
-  const showPrepare = snapshot.ready && !studio && (view === 'prepare' || (view === 'home' && firstRun && !prepareSkipped));
+  const showPrepare = snapshot.ready && !studio && (view === 'prepare' || (view === 'home' && (firstRun || prepareHeld) && !prepareSkipped));
+  React.useEffect(() => { if (showPrepare && view === 'home' && !prepareHeld) setPrepareHeld(true); }, [showPrepare, view, prepareHeld]);
   const inInterview = view === 'chat' && Boolean(interview) && !chatExpanded;
   const immersive = showPrepare || inInterview;
   const leavePrepare = () => { setPrepareSkipped(true); if (view === 'prepare') navigate({ type: 'deskPage', view: 'home' }); };
   const startPrepared = input => {
     if (!selectedWorkspace) { setError({ code: 'WORKSPACE_REQUIRED' }); return Promise.resolve(undefined); }
     return run(() => startInterview({ ...input, workspaceId: selectedWorkspace.workspaceId }), result => {
-      saveDraft('prepare', undefined); selectChat({ goalId: input.goalId, sessionId: result.sessionId });
+      saveDraft('prepare', undefined); setPrepareHeld(false); selectChat({ goalId: input.goalId, sessionId: result.sessionId });
     });
   };
   const fullChat = (view === 'chat' && !interview && !studio) || chatExpanded;
   const showDock = fullChat || (dockOpen && !focusResult && !(view === 'chat' && interview?.mode === 'realtime'));
-  return <TaskCancelContext.Provider value={{ canCancel: Boolean(snapshot.operation?.canCancel), cancel: () => cancelCurrent?.(snapshot.operation?.requestId) }}><div className={`zj${narrow ? ' zj-narrow' : ''}${immersive ? ' zj-immersive' : ''}`} ref={rootRef} data-zhijing-workbench=""><style>{css + deskCss + shellCss + flowCss + roomCss}</style>{!immersive && <aside className="zj-rail" aria-label={t('panel')}>
+  return <TaskCancelContext.Provider value={{ canCancel: Boolean(snapshot.operation?.canCancel), cancel: () => cancelCurrent?.(snapshot.operation?.requestId) }}><div className={`zj${narrow ? ' zj-narrow' : ''}${immersive ? ' zj-immersive' : ''}`} ref={rootRef} data-zhijing-workbench=""><style>{css + deskCss + shellCss + flowCss + scoreCss + roomCss}</style>{!immersive && <aside className="zj-rail" aria-label={t('panel')}>
     <div className="zj-brand"><Mark size={26}/><span>{t('panel')}</span></div>
     <section><h2 className="zj-section-label">{t('goals')}<button title={t('newGoal')} aria-label={t('newGoal')} onClick={() => setModal({ kind: 'goal' })}>+</button></h2>
       <div className="zj-goals">{state.goals.map(row => <div key={row.id}><button className={`zj-goal-name${goalId === row.id ? ' is-active' : ''}`} onClick={() => selectGoal(row.id)}><span>{row.title}</span></button>
@@ -316,7 +320,7 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
     {!immersive && <TaskCard operation={snapshot.operation} onCancel={cancelCurrent} onRetry={() => run(() => retryCurrent?.())} onOpen={openObject} t={t}/>}
     {currentError && <div className="zj-error" role="alert"><strong>{t('errorTitle')}</strong><span>{errors.has(currentError.code) ? t(`error_${currentError.code}`) : currentError.message || t('error_REQUEST_FAILED')}</span><Button quiet small onClick={() => { setError(null); void refresh(); }}>{t('retry')}</Button></div>}
     {showPrepare ? <Prepare t={t} state={state} busy={busy} draft={drafts.prepare} onDraftChange={value => saveDraft('prepare', value)}
-      action={perform} upload={(file, metadata) => run(() => upload(file, metadata))} startInterview={startPrepared}
+      action={perform} task={operation => run(() => operation(action))} upload={(file, metadata) => run(() => upload(file, metadata))} startInterview={startPrepared}
       workspaces={workspaceChoices.items} workspaceId={selectedWorkspace?.workspaceId || ''} onWorkspace={setWorkspaceId}
       onManageWorkspaces={() => run(async () => { if (!openWorkspaceManager?.()) throw new Error(t('unavailable')); })}
       realtimeApi={realtimeApi} openRealtimeSettings={openRealtimeSettings}/> : <>
