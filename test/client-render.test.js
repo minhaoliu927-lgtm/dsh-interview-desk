@@ -96,18 +96,30 @@ test('workbench voice enablement is user-triggered, uses only the official manag
   assert.equal(calls.length, 3);
 });
 
-test('empty workspace renders a usable bilingual home without fabricated sample scores', async () => {
+test('a new user lands in the prepare flow, without the workbench chrome or fabricated scores', async () => {
   const { App } = await compile('client/workbench.jsx');
   for (const dictionary of [zh, en]) {
     const html = renderToStaticMarkup(React.createElement(App, { t: translate(dictionary), useCareer: () => ({ data: empty, ready: true, pending: 0 }), useNativeSessions: () => ({ ids: [], byId: {} }), useWorkspaceChoices: () => ({ items: [], phase: 'ready' }), renderSlot: () => null }));
-    assert.ok(html.includes(dictionary.deskIntro_home));
-    assert.ok(html.includes(dictionary.newChat));
-    assert.ok(html.includes(dictionary.addMaterial));
-    assert.ok(html.includes(dictionary.workspaceRequired));
-    assert.ok(html.includes(dictionary.enableHostVoice));
-    assert.ok(html.includes(dictionary.voiceEnableNote));
+    assert.ok(html.includes('data-prepare'));
+    for (const key of ['prepSlogan', 'prepLead', 'prepBegin', 'prepTheirs', 'prepYours', 'prepNotReady', 'prepSkip']) assert.ok(html.includes(dictionary[key]), key);
+    // The two inputs come before any promise about questions.
+    assert.ok(html.indexOf(dictionary.prepTheirs) < html.indexOf(dictionary.prepYours));
+    assert.equal(html.includes('class="zj-rail'), false);
+    assert.equal(html.includes('class="zj-desk-nav'), false);
     assert.equal(html.includes('<iframe'), false);
     assert.equal(html.includes('class="zj-score"'), false);
+  }
+});
+
+test('a returning user keeps the workbench home and can open the prepare flow from it', async () => {
+  const { App } = await compile('client/workbench.jsx');
+  const data = { ...empty, goals: [{ id: 'g', title: 'Role', status: 'active', materialLinks: [], conversations: [] }] };
+  for (const dictionary of [zh, en]) {
+    const html = renderToStaticMarkup(React.createElement(App, { t: translate(dictionary), useCareer: () => ({ data, ready: true, pending: 0 }), useNativeSessions: () => ({ ids: [], byId: {} }), useWorkspaceChoices: () => ({ items: [], phase: 'ready' }), renderSlot: () => null }));
+    assert.equal(html.includes('data-prepare'), false);
+    assert.ok(html.includes(dictionary.deskIntro_home));
+    assert.ok(html.includes(dictionary.workspaceRequired));
+    assert.ok(html.includes(dictionary.enableHostVoice));
   }
 });
 

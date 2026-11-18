@@ -1,6 +1,10 @@
 import React from 'react';
 import css from './styles.css';
 import deskCss from './desk-styles.css';
+import shellCss from './css/shell.css';
+import flowCss from './css/flow.css';
+import roomCss from './css/room.css';
+import { Prepare } from './prepare.jsx';
 import { Button, GoalForm, Mark, MaterialForm, MaterialPicker, Modal, Tabs, TaskCancelContext, createSubmissionGuard } from './components.jsx';
 import { Materials, GoalMaterials } from './materials.jsx';
 import { Analysis, ResumeSelect } from './analysis.jsx';
@@ -83,6 +87,7 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
   const [chatExpanded, setChatExpanded] = React.useState(false);
   const navigationRef = React.useRef(navigation); navigationRef.current = navigation;
   const [dockOpen, setDockOpen] = React.useState(true);
+  const [prepareSkipped, setPrepareSkipped] = React.useState(false);
   const [narrow, setNarrow] = React.useState(false);
   const [context, setContext] = React.useState(null);
   const [contextNotice, setContextNotice] = React.useState(null);
@@ -125,7 +130,8 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
   const workspaceAnchor = React.useRef(null);
   const mainSessions = nativeSessions.ids.filter(id => nativeSessions.byId[id]?.retainedBy?.mainView > 0);
   const inheritedWorkspace = mainSessions.length === 1 ? workspaceChoices.items.find(row => row.sessionIds.includes(mainSessions[0])) : undefined;
-  const selectedWorkspace = workspaceChoices.items.find(row => row.workspaceId === workspaceId) || (!workspaceId ? inheritedWorkspace : undefined);
+  const selectedWorkspace = workspaceChoices.items.find(row => row.workspaceId === workspaceId)
+    || (!workspaceId ? inheritedWorkspace || (workspaceChoices.items.length === 1 ? workspaceChoices.items[0] : undefined) : undefined);
   const sessionWorkspace = workspaceChoices.items.find(row => row.sessionIds.includes(sessionId));
   const nativeRunning = Boolean(nativeSessions.byId[sessionId]?.running);
   const goal = state.goals.find(row => row.id === goalId);
@@ -272,9 +278,22 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
     const root = rootRef.current; root?.addEventListener('keydown', onKey); return () => root?.removeEventListener('keydown', onKey);
   }, [studio, context, narrow, dockOpen, modal, newestUndo?.id, busy]);
 
+  // A new user lands in the prepare flow; it and a running interview take the
+  // whole panel, without the workbench rail and bars around them.
+  const firstRun = snapshot.ready && !state.goals.length && !state.interviews.length;
+  const showPrepare = snapshot.ready && !studio && (view === 'prepare' || (view === 'home' && firstRun && !prepareSkipped));
+  const inInterview = view === 'chat' && Boolean(interview) && !chatExpanded;
+  const immersive = showPrepare || inInterview;
+  const leavePrepare = () => { setPrepareSkipped(true); if (view === 'prepare') navigate({ type: 'deskPage', view: 'home' }); };
+  const startPrepared = input => {
+    if (!selectedWorkspace) { setError({ code: 'WORKSPACE_REQUIRED' }); return Promise.resolve(undefined); }
+    return run(() => startInterview({ ...input, workspaceId: selectedWorkspace.workspaceId }), result => {
+      saveDraft('prepare', undefined); selectChat({ goalId: input.goalId, sessionId: result.sessionId });
+    });
+  };
   const fullChat = (view === 'chat' && !interview && !studio) || chatExpanded;
   const showDock = fullChat || (dockOpen && !focusResult && !(view === 'chat' && interview?.mode === 'realtime'));
-  return <TaskCancelContext.Provider value={{ canCancel: Boolean(snapshot.operation?.canCancel), cancel: () => cancelCurrent?.(snapshot.operation?.requestId) }}><div className={`zj${narrow ? ' zj-narrow' : ''}`} ref={rootRef} data-zhijing-workbench=""><style>{css + deskCss}</style><aside className="zj-rail" aria-label={t('panel')}>
+  return <TaskCancelContext.Provider value={{ canCancel: Boolean(snapshot.operation?.canCancel), cancel: () => cancelCurrent?.(snapshot.operation?.requestId) }}><div className={`zj${narrow ? ' zj-narrow' : ''}${immersive ? ' zj-immersive' : ''}`} ref={rootRef} data-zhijing-workbench=""><style>{css + deskCss + shellCss + flowCss + roomCss}</style>{!immersive && <aside className="zj-rail" aria-label={t('panel')}>
     <div className="zj-brand"><Mark size={26}/><span>{t('panel')}</span></div>
     <section><h2 className="zj-section-label">{t('goals')}<button title={t('newGoal')} aria-label={t('newGoal')} onClick={() => setModal({ kind: 'goal' })}>+</button></h2>
       <div className="zj-goals">{state.goals.map(row => <div key={row.id}><button className={`zj-goal-name${goalId === row.id ? ' is-active' : ''}`} onClick={() => selectGoal(row.id)}><span>{row.title}</span></button>
@@ -283,15 +302,24 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
     </section>
     {conversations.some(row => !row.goalId) && <section><h2 className="zj-section-label">{t('ungrouped')}</h2>{conversations.filter(row => !row.goalId).map(row => <button key={row.id} className={`zj-chat-link${sessionId === row.sessionId ? ' is-active' : ''}`} onClick={() => selectChat(row)}><span>{conversationTitle(row)}</span></button>)}</section>}
     <div className="zj-voice-setup"><Button small quiet onClick={openRealtimeSettings}>{t('realtimeSettings')}</Button><details><summary>{t('compatibleVoiceInput')}</summary><VoiceSetup t={t} enableVoiceInput={enableVoiceInput} openVoiceSettings={openVoiceSettings}/></details></div>
-  </aside><section className="zj-main"><nav className="zj-desk-nav" aria-label={t('deskNavigation')}>{DESK_PAGES.map(page => <button key={page} type="button" aria-current={selectedPage === page ? 'page' : undefined} className={selectedPage === page ? 'is-active' : ''} onClick={() => selectPage(page)}>{t(PAGE_LABELS[page])}</button>)}</nav><header className="zj-topbar"><h1>{title}</h1>{goal?.company && <span className="zj-subtle">{goal.company}</span>}
-    <div className="zj-toolbar">{(view === 'chat' || chatExpanded) && <Button small quiet onClick={() => chatExpanded ? setChatExpanded(false) : navigate({ type: 'workspace' })}>{t('backToWorkbench')}</Button>}{!fullChat && !(view === 'chat' && interview?.mode === 'realtime') && <Button small quiet aria-expanded={showDock} onClick={() => setDockOpen(value => !value)}>{t(showDock ? 'hideAssistant' : 'showAssistant')}</Button>}<Button small quiet onClick={() => { setError(null); void refresh(); }}>{t('refresh')}</Button><Button small disabled={busy} onClick={() => newChat(goal?.id || null)}>{t('newChat')}</Button>{goal && <Button small primary disabled={busy} onClick={openInterview}>{t('newInterview')}</Button>}</div>
+  </aside>}<section className="zj-main">{immersive ? <header className="zj-slim"><div className="zj-brand"><Mark size={20}/><span>{t('panel')}</span></div>
+    <div className="zj-toolbar">{inInterview && interview.mode !== 'realtime' && <Button small quiet aria-expanded={showDock} onClick={() => setDockOpen(value => !value)}>{t(showDock ? 'hideAssistant' : 'showAssistant')}</Button>}
+      {inInterview && <Button small quiet onClick={() => navigate({ type: 'workspace' })}>{t('backToWorkbench')}</Button>}
+      {showPrepare && <Button small quiet onClick={leavePrepare}>{t('prepSkip')}</Button>}</div>
+  </header> : <><nav className="zj-desk-nav" aria-label={t('deskNavigation')}>{DESK_PAGES.map(page => <button key={page} type="button" aria-current={selectedPage === page ? 'page' : undefined} className={selectedPage === page ? 'is-active' : ''} onClick={() => selectPage(page)}>{t(PAGE_LABELS[page])}</button>)}</nav><header className="zj-topbar"><h1>{title}</h1>{goal?.company && <span className="zj-subtle">{goal.company}</span>}
+    <div className="zj-toolbar">{(view === 'chat' || chatExpanded) && <Button small quiet onClick={() => chatExpanded ? setChatExpanded(false) : navigate({ type: 'workspace' })}>{t('backToWorkbench')}</Button>}{!fullChat && !(view === 'chat' && interview?.mode === 'realtime') && <Button small quiet aria-expanded={showDock} onClick={() => setDockOpen(value => !value)}>{t(showDock ? 'hideAssistant' : 'showAssistant')}</Button>}<Button small quiet onClick={() => { setError(null); void refresh(); }}>{t('refresh')}</Button><Button small disabled={busy} onClick={() => newChat(goal?.id || null)}>{t('newChat')}</Button>{goal ? <Button small primary disabled={busy} onClick={openInterview}>{t('newInterview')}</Button> : <Button small primary onClick={() => navigate({ type: 'deskPage', view: 'prepare' })}>{t('prepOpen')}</Button>}</div>
   </header>
     <div className="zj-review-note"><label>{t('dshWorkspace')} <select ref={workspaceAnchor} value={selectedWorkspace?.workspaceId || ''} onChange={event => setWorkspaceId(event.target.value)}><option value="">{t('selectWorkspace')}</option>{workspaceChoices.items.map(row => <option key={row.workspaceId} value={row.workspaceId}>{row.title}</option>)}</select></label>{!selectedWorkspace && <span>{t('workspaceRequired')}</span>}
       <Button small quiet onClick={() => run(async () => { if (!openWorkspaceManager?.()) throw new Error(t('unavailable')); })}>{t('manageWorkspaces')}</Button>
-    </div>
+    </div></>}
     {(busy || snapshot.loading) && <div className="zj-progress" role="progressbar" aria-label={t('processing')}/>}
-    <TaskCard operation={snapshot.operation} onCancel={cancelCurrent} onRetry={() => run(() => retryCurrent?.())} onOpen={openObject} t={t}/>
+    {!immersive && <TaskCard operation={snapshot.operation} onCancel={cancelCurrent} onRetry={() => run(() => retryCurrent?.())} onOpen={openObject} t={t}/>}
     {currentError && <div className="zj-error" role="alert"><strong>{t('errorTitle')}</strong><span>{errors.has(currentError.code) ? t(`error_${currentError.code}`) : currentError.message || t('error_REQUEST_FAILED')}</span><Button quiet small onClick={() => { setError(null); void refresh(); }}>{t('retry')}</Button></div>}
+    {showPrepare ? <Prepare t={t} state={state} busy={busy} draft={drafts.prepare} onDraftChange={value => saveDraft('prepare', value)}
+      action={perform} upload={(file, metadata) => run(() => upload(file, metadata))} startInterview={startPrepared}
+      workspaces={workspaceChoices.items} workspaceId={selectedWorkspace?.workspaceId || ''} onWorkspace={setWorkspaceId}
+      onManageWorkspaces={() => run(async () => { if (!openWorkspaceManager?.()) throw new Error(t('unavailable')); })}
+      realtimeApi={realtimeApi} openRealtimeSettings={openRealtimeSettings}/> : <>
     {studio && <StudioHeader t={t} title={objectTitle} onBack={closeObject} previous={objectIndex > 0 ? visibleRows[objectIndex - 1] : null} next={objectIndex >= 0 ? visibleRows[objectIndex + 1] : null} onMove={row => openObject(row, selectedPage)} focus={focusResult} onFocus={() => { setFocusResult(value => !value); setDockOpen(true); }}/>}
     <div className={`zj-stage${fullChat ? ' is-chat' : ''}${studio ? ' is-studio' : ''}${showDock ? ' has-assistant' : ''}`}><div className={`zj-workspace-page${fullChat ? ' is-hidden' : ''}`} aria-hidden={fullChat || undefined}>
     {!snapshot.ready ? <div className="zj-body"><p className="zj-subtle">{t('loading')}</p></div> : !studio && DESK_PAGES.includes(view) ? <Collection key={view} page={view} rows={rows} value={collections[view]} onChange={patch => setCollections(values => ({ ...values, [view]: { ...values[view], ...patch } }))} onOpen={row => openObject(row, view)} onAddMaterial={() => addMaterial()} busy={busy} onStatusChange={(id, status) => perform('goal.update', { goalId: id, status })} onCreate={view === 'personal' ? () => addMaterial() : view === 'goals' ? () => setModal({ kind: 'goal' }) : view === 'home' ? () => newChat(null) : undefined} t={t}/> : view === 'result' ? <ResultStudio key={studio?.target.id} row={resultRow} state={state} t={t} busy={busy} onExport={exportFile} onEvidence={showEvidence} onAction={perform} onReviewVersion={reviewVersion} draft={drafts[`result:${studio?.target.id}`]} onDraftChange={value => saveDraft(`result:${studio?.target.id}`, value)}/> : view === 'personal' ? <Materials studio state={state} t={t} busy={busy} selectedId={materialId} selectedVersionId={materialVersionId} onSelect={id => { setMaterialId(id); setMaterialVersionId(null); }} onAdd={() => addMaterial()} onEdit={(material, version) => setModal({ kind: 'material', material, version })} onConfirm={confirmVersion} onExport={exportFile} onAssess={id => perform('assessment.run', { kind: 'resume', versionId: id })} onEvidence={showEvidence} onSource={id => run(() => readSource(id), data => setModal({ kind: 'source', data }))} onChatContext={askContext}/> : view === 'chat' && sessionId ? <>
@@ -320,7 +348,7 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
     {contextNotice && <p className="zj-context-notice" role="status">{contextNotice}</p>}
     {!interview && <div className="zj-suggestions">{['deskSuggestReview', 'deskSuggestPrepare'].map(key => <Button small quiet key={key} disabled={busy} onClick={() => prepareSuggestion(key)}>{t(key)}</Button>)}</div>}
     {nativeChat || <div className="zj-assistant-empty"><p>{t('assistantEmpty')}</p><Button primary disabled={busy} onClick={() => newChat(goal?.id || null)}>{t('newChat')}</Button></div>}
-  </aside></div></section>
+  </aside></div></>}</section>
     {modal?.kind === 'goal' && <GoalForm t={t} busy={busy} saving={localPending > 0} draft={drafts.goal} onDraftChange={value => saveDraft('goal', value)} onClose={() => setModal(null)} onSave={input => run(() => action('goal.create', input), value => { saveDraft('goal', undefined); if (currentModal.current === modal) { setModal(null); selectGoal(value.id); } })}/>}
     {modal?.kind === 'editGoal' && <GoalForm t={t} busy={busy} saving={localPending > 0} editing draft={drafts[`goal:${modal.goal.id}`] || modal.goal} onDraftChange={value => saveDraft(`goal:${modal.goal.id}`, value)} onClose={() => setModal(null)} onSave={input => run(() => action('goal.update', { goalId: modal.goal.id, ...input }), () => { saveDraft(`goal:${modal.goal.id}`, undefined); setModal(null); })}/>}
     {modal?.kind === 'material' && <MaterialForm key={materialDraftKey(modal)} t={t} busy={busy} saving={localPending > 0} {...modal} draft={drafts[materialDraftKey(modal)]} onDraftChange={value => saveDraft(materialDraftKey(modal), value)} onClose={() => setModal(null)} onSave={(name, input) => run(() => action(name, input), materialSaved)} onUpload={(file, metadata) => run(() => upload(file, metadata), materialSaved)}/>}

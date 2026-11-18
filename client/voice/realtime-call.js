@@ -208,8 +208,15 @@ export function createRealtimeCall({ interviewId, api, onChange = () => {}, onCh
     }
   }
 
+  const silence = Object.freeze({ input: 0, output: 0, available: false });
   return {
     getState, start, refreshCatalog,
+    /** Loudness of the live call for visuals; never part of UI state or storage. */
+    levels() {
+      const run = current;
+      if (!active(run) || !run.ready || typeof run.media?.levels !== 'function') return silence;
+      try { return run.media.levels() || silence; } catch { return silence; }
+    },
     setMuted(value) { if (active(current) && current.ready) current.media.setMuted(Boolean(value)); },
     async interrupt() {
       const run = current;

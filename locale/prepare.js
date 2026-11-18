@@ -1,0 +1,33 @@
+// Copy for the prepare flow and the interview room.
+export const zhPrepare = {
+  prepSlogan: '正式面试前，先在这里面一场。', prepLead: '先放两样东西：岗位要求，和你的简历。',
+  prepBegin: '开始准备', prepSkip: '先去工作台看看', prepOpen: '准备一场面试',
+  prepTheirs: '他们要什么样的人', prepTheirsNote: '贴上你想面的岗位要求。',
+  prepYours: '你是什么样的人', prepYoursNote: '放上你的简历。', prepNextResume: '下一步放简历。',
+  prepRole: '岗位名称', prepRoleHint: '例如：高级前端工程师', prepJobText: '岗位要求', prepJobHint: '粘贴岗位要求的正文',
+  prepJobTitle: '{role} 岗位要求', prepJobUrlHint: '公开的招聘页面链接', prepUseLink: '改用招聘链接', prepUsePaste: '改为粘贴正文', prepReadLink: '读取链接',
+  prepConfirmNext: '确认并继续', prepContinue: '继续', prepConfirmThis: '确认是这份', prepReplace: '换一份',
+  prepReviewNote: '这是识别出的正文。看一眼姓名、时间和数字，没问题就确认。', prepConfirmed: '已确认，这一场按这份来问。',
+  prepDrop: '拖入 PDF、Word 或图片，也可以点这里选择文件', prepPasteResume: '改为粘贴简历正文', prepUseFile: '改为导入文件',
+  prepResumeHint: '粘贴简历正文', prepExisting: '用已有的简历',
+  prepBackJob: '回到岗位要求', prepBackResume: '回到简历', prepJobMissing: '还没填岗位要求。', prepMissing: '还没放', prepUnconfirmed: '还没确认',
+  prepNotReady: '岗位和简历都放好，就可以开始。', prepStart: '开始面试', prepCount: '{number} 题',
+  prepVoiceSetup: '语音面试要先接入音频服务。接好后回到这里重新检查。', prepRecheck: '重新检查',
+  realtimeTranscriptHere: '面试官的话会显示在这里。', interviewWaiting: '正在准备问题',
+};
+export const enPrepare = {
+  prepSlogan: 'Rehearse the interview before the real one.', prepLead: 'Start with two things: the job description and your resume.',
+  prepBegin: 'Get ready', prepSkip: 'Open the workbench first', prepOpen: 'Prepare an interview',
+  prepTheirs: 'Who they are looking for', prepTheirsNote: 'Paste the description of the job you want to interview for.',
+  prepYours: 'Who you are', prepYoursNote: 'Add your resume.', prepNextResume: 'Your resume comes next.',
+  prepRole: 'Role', prepRoleHint: 'For example: Senior frontend engineer', prepJobText: 'Job description', prepJobHint: 'Paste the job description',
+  prepJobTitle: '{role} job description', prepJobUrlHint: 'Link to a public job posting', prepUseLink: 'Use a posting link instead', prepUsePaste: 'Paste the text instead', prepReadLink: 'Read the link',
+  prepConfirmNext: 'Confirm and continue', prepContinue: 'Continue', prepConfirmThis: 'Confirm this one', prepReplace: 'Use a different one',
+  prepReviewNote: 'This is the extracted text. Check names, dates and numbers, then confirm.', prepConfirmed: 'Confirmed. This interview will use it.',
+  prepDrop: 'Drop a PDF, Word file or image here, or click to choose a file', prepPasteResume: 'Paste your resume text instead', prepUseFile: 'Import a file instead',
+  prepResumeHint: 'Paste your resume', prepExisting: 'Use a saved resume',
+  prepBackJob: 'Back to the job description', prepBackResume: 'Back to the resume', prepJobMissing: 'No job description yet.', prepMissing: 'Not added yet', prepUnconfirmed: 'Not confirmed yet',
+  prepNotReady: 'Add the job description and your resume to start.', prepStart: 'Start the interview', prepCount: '{number} questions',
+  prepVoiceSetup: 'Voice interviews need an audio service first. Set it up, then check again here.', prepRecheck: 'Check again',
+  realtimeTranscriptHere: "The interviewer's words appear here.", interviewWaiting: 'Preparing the question',
+};
