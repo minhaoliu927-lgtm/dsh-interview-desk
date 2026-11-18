@@ -25,7 +25,7 @@ test('connection authentication is required and cross-site writes are refused', 
 });
 
 test('UI and tools use the same persisted service; tools cannot confirm or accept', async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'zhijing-host-'));
+  const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'zhijing-host-')));
   const registered = new Map();
   const ctx = { get: () => undefined, on: () => () => {}, tools: { register(tool) { registered.set(tool.name, tool); } } };
   const services = createHostServices(ctx, directory);
@@ -49,7 +49,7 @@ test('UI and tools use the same persisted service; tools cannot confirm or accep
 });
 
 test('voice cannot write credentials or accept plugin-specific service settings', async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'zhijing-credentials-'));
+  const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'zhijing-credentials-')));
   const writes = [];
   const services = createHostServices({ get: name => name === 'credentials' ? { set: async (...args) => writes.push(args) } : undefined }, directory);
   try {
@@ -100,7 +100,7 @@ test('generation uses trusted session model selection and never a model field fr
 });
 
 test('plugin lifecycle registers routes and a real bundled skill, then releases resources', async () => {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'zhijing-plugin-'));
+  const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'zhijing-plugin-')));
   const disposers = []; let route, provider; const tools = [];
   const ctx = { dshHomePath: () => directory, get: () => undefined, on: () => () => {},
     inject(_names, operation) { operation(ctx); },

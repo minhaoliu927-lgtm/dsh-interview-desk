@@ -1,0 +1,437 @@
+/*
+ * Prepare flow: one vertical axis, one step per screen.
+ * The job sits left of the axis, the candidate right of it; the axis ends at
+ * the start bar. A button slides to the next step and the wheel steps back.
+ */
+.zj-kai {
+  font-family: var(--zj-kai);
+}
+.zj-flow {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: y mandatory;
+  container-type: size;
+}
+.zj-hero,
+.zj-sec {
+  min-height: 100%;
+  min-height: 100cqh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+/* Opening: the axis starts under the button and leads the eye down. */
+.zj-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 32px;
+  overflow: hidden;
+  text-align: center;
+  background: var(--zj-bg);
+}
+.zj-hero-space {
+  flex: 1 1 0;
+}
+.zj-hero h1 {
+  margin: 0;
+  font-size: 44px;
+  line-height: 1.3;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  text-wrap: balance;
+}
+.zj-hero-lead {
+  margin: 14px 0 0;
+  font-size: 16px;
+  color: var(--zj-muted);
+}
+.zj-hero .zj-btn.primary {
+  margin-top: 28px;
+}
+.zj-lead {
+  position: relative;
+  flex: 1 1 0;
+  width: 1px;
+  margin-top: 28px;
+  background: linear-gradient(to bottom, transparent, var(--zj-edge) 45%);
+}
+.zj-lead::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 0;
+  width: 3px;
+  height: 36px;
+  border-radius: 2px;
+  background: linear-gradient(to bottom, transparent, var(--zj-accent));
+  animation: zj-fall 2.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+@keyframes zj-fall {
+  0% {
+    transform: translateY(-40px);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(340px);
+    opacity: 0;
+  }
+}
+
+/* Steps: a two-tone field split by the axis. */
+.zj-sec {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-content: start;
+  background: linear-gradient(to right, var(--zj-panel) 50%, var(--zj-bg) 50%);
+}
+.zj-sec.is-start {
+  grid-template-rows: 270px auto;
+}
+.zj-side {
+  min-width: 0;
+  padding: 92px 64px 56px;
+}
+.zj-sec.is-start .zj-side {
+  padding-bottom: 0;
+}
+.zj-block {
+  display: block;
+  max-width: 440px;
+}
+.zj-side.is-l .zj-block {
+  margin-left: auto;
+}
+.zj-side.is-r .zj-block {
+  margin-right: auto;
+}
+.zj-block h2,
+.zj-block .zj-block-title {
+  margin: 0;
+  font-family: var(--zj-kai);
+  font-size: 28px;
+  line-height: 1.4;
+  font-weight: 400;
+}
+.zj-side.is-quiet .zj-block-title {
+  color: var(--zj-muted);
+}
+.zj-block-note {
+  margin: 4px 0 18px;
+  color: var(--zj-muted);
+  line-height: 1.6;
+}
+.zj-side.is-quiet .zj-block-note {
+  margin-bottom: 0;
+}
+.zj-block-label {
+  display: block;
+  font-size: 13px;
+  color: var(--zj-muted);
+}
+.zj-block-value {
+  font-family: var(--zj-kai);
+  font-size: 24px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.zj-block-value.is-missing {
+  color: var(--zj-muted);
+}
+
+.zj-axis {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--zj-edge);
+  transition: background-color 0.9s ease;
+  pointer-events: none;
+}
+.zj-axis.is-short {
+  bottom: auto;
+  height: 270px;
+}
+.zj-axis.is-lit {
+  background: var(--zj-accent);
+}
+.zj-node {
+  position: absolute;
+  left: 50%;
+  top: 104px;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  border-radius: 50%;
+  border: 1px solid var(--zj-edge);
+  background: var(--zj-bg);
+  transition:
+    background-color 0.9s ease,
+    border-color 0.9s ease;
+  pointer-events: none;
+}
+.zj-node.is-done {
+  background: var(--zj-accent);
+  border-color: var(--zj-accent);
+}
+.zj-node.is-current {
+  border-color: var(--zj-accent);
+  animation: zj-breathe 2.4s ease-in-out infinite;
+}
+@keyframes zj-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--zj-accent) 45%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+
+/* Inputs inside the flow. */
+.zj-field-label {
+  display: block;
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--zj-muted);
+}
+.zj-field {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--zj-line);
+  border-radius: 12px;
+  background: var(--zj-bg);
+  color: var(--zj-ink);
+  line-height: 1.7;
+}
+textarea.zj-field {
+  resize: vertical;
+  min-height: 150px;
+}
+.zj-field + .zj-field-label,
+.zj-field + label {
+  margin-top: 14px;
+}
+.zj-flow-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px 16px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.zj-flow .zj-btn.quiet {
+  padding-left: 2px;
+  padding-right: 2px;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.zj-flow .zj-btn.quiet:hover {
+  color: var(--zj-ink);
+}
+.zj-drop {
+  display: grid;
+  place-items: center;
+  min-height: 190px;
+  padding: 24px;
+  border: 1px dashed var(--zj-muted);
+  border-radius: 12px;
+  color: var(--zj-muted);
+  text-align: center;
+  line-height: 1.7;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease-out,
+    color 0.2s ease-out,
+    background-color 0.2s ease-out;
+}
+.zj-drop:hover,
+.zj-drop.is-over,
+.zj-drop:focus-within {
+  border-color: var(--zj-accent);
+  color: var(--zj-ink);
+}
+.zj-drop.is-over {
+  background: color-mix(in srgb, var(--zj-accent) 6%, transparent);
+}
+.zj-drop.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.zj-drop input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.zj-doc {
+  padding: 16px 18px;
+  border: 1px solid var(--zj-line);
+  border-radius: 12px;
+  background: var(--zj-bg);
+}
+.zj-doc.is-confirmed {
+  border-color: var(--zj-edge);
+}
+.zj-doc strong {
+  display: block;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.zj-doc-text {
+  margin: 8px 0 0;
+  max-height: 168px;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--zj-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.zj-doc-state {
+  color: var(--zj-muted);
+}
+
+/* Start bar: sits on the end of the axis and straddles both sides. */
+.zj-bar {
+  grid-column: 1 / -1;
+  justify-self: center;
+  position: relative;
+  max-width: calc(100% - 48px);
+  margin-bottom: 56px;
+  padding: 16px 22px;
+  border: 1px solid var(--zj-edge);
+  border-radius: 16px;
+  background: var(--zj-bg);
+  text-align: center;
+}
+.zj-bar p {
+  margin: 0;
+  color: var(--zj-muted);
+  line-height: 1.7;
+}
+.zj-bar-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 18px;
+  flex-wrap: wrap;
+}
+.zj-bar-note {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.zj-opts {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.zj-opt {
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 18px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--zj-muted);
+  white-space: nowrap;
+}
+.zj-opt:hover {
+  color: var(--zj-ink);
+}
+.zj-opt[aria-pressed='true'] {
+  color: var(--zj-ink);
+  border-color: var(--zj-edge);
+  font-weight: 600;
+}
+.zj-bar select {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--zj-line);
+  border-radius: 18px;
+  background: var(--zj-bg);
+  color: var(--zj-ink);
+}
+
+/* Motion: slow fades; steps reveal as they scroll into view. */
+.zj-fade {
+  animation: zj-fade 0.6s ease both;
+}
+@keyframes zj-fade {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes zj-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@supports (animation-timeline: view()) {
+  .zj-reveal {
+    animation: zj-reveal linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 40%;
+  }
+}
+
+@container (max-width: 759px) {
+  .zj-sec {
+    grid-template-columns: minmax(0, 1fr);
+    background: var(--zj-bg);
+  }
+  .zj-sec.is-start {
+    grid-template-rows: auto;
+  }
+  .zj-side {
+    padding: 40px 24px 24px;
+  }
+  .zj-side.is-quiet,
+  .zj-axis,
+  .zj-node {
+    display: none;
+  }
+  .zj-side.is-l .zj-block,
+  .zj-side.is-r .zj-block {
+    margin: 0;
+    max-width: none;
+  }
+  .zj-bar {
+    justify-self: stretch;
+    max-width: none;
+    margin: 24px 24px 40px;
+  }
+  .zj-hero h1 {
+    font-size: 30px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zj-fade,
+  .zj-reveal,
+  .zj-node.is-current,
+  .zj-lead::after {
+    animation: none;
+  }
+}
