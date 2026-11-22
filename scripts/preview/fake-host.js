@@ -6,6 +6,14 @@ const now = () => new Date().toISOString();
 let counter = 0;
 const id = prefix => `${prefix}-${++counter}`;
 
+function wav(seconds, rate = 24000) {
+  const pcm = atob(tone(seconds, rate)), header = new Uint8Array(44), view = new DataView(header.buffer);
+  const text = (at, value) => { for (let i = 0; i < value.length; i++) header[at + i] = value.charCodeAt(i); };
+  text(0, 'RIFF'); view.setUint32(4, 36 + pcm.length, true); text(8, 'WAVE'); text(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); text(36, 'data'); view.setUint32(40, pcm.length, true);
+  return btoa(String.fromCharCode(...header) + pcm);
+}
+
 function tone(seconds, rate = 24000) {
   const samples = Math.floor(seconds * rate), bytes = new Uint8Array(samples * 2), view = new DataView(bytes.buffer);
   for (let i = 0; i < samples; i++) {
@@ -44,6 +52,30 @@ export function createFakeHost({ seed = 'empty', voice = 'ready', model = 'ready
     void resume;
   }
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+  // The plugin's own settings, as DSH ConfigForms and credentials would hold them.
+  const settingsListeners = new Set();
+  let settings = { status: 'ready', writable: true, revision: 1, value: voice === 'ready'
+    ? { realtimeEnabled: true, realtimeRegion: 'beijing', realtimeWorkspace: 'llm-preview', realtimeModel: 'qwen3.5-omni-plus-realtime', realtimeCredential: 'ZHIJING_REALTIME_API_KEY' }
+    : { realtimeEnabled: false, realtimeRegion: 'beijing', realtimeWorkspace: '', realtimeModel: 'qwen3.5-omni-plus-realtime', realtimeCredential: 'ZHIJING_REALTIME_API_KEY' } };
+  let keySaved = voice === 'ready';
+  const configForm = {
+    getSnapshot: () => settings,
+    subscribe: run => { settingsListeners.add(run); return () => settingsListeners.delete(run); },
+    async mutate(ops, revision) {
+      await delay(250);
+      if (revision !== undefined && revision !== settings.revision) return false;
+      const value = { ...settings.value };
+      for (const op of ops) value[op.path[0]] = op.value;
+      settings = { ...settings, value, revision: settings.revision + 1 };
+      settingsListeners.forEach(run => run());
+      return true;
+    },
+  };
+  const credentials = {
+    async describe(refs) { await delay(120); return { ok: true, value: Object.fromEntries(refs.map(ref => [ref, { configured: keySaved, writable: true }])) }; },
+    async set(_ref, secret) { await delay(250); keySaved = typeof secret === 'string' && secret.length > 0; return { ok: true }; },
+  };
+  const realtimeReady = () => settings.value.realtimeEnabled && Boolean(settings.value.realtimeWorkspace) && keySaved;
   // Scores rise with each revision so the loop can be walked through: about 66, then 84.
   const rubrics = {
     fit: [['skills', '岗位技能', 40, [3, 4], 'React 与性能优化和岗位直接对应；岗位要求的“带小组”在简历里只出现在一句话里。'],
@@ -108,6 +140,11 @@ export function createFakeHost({ seed = 'empty', voice = 'ready', model = 'ready
         data.interviews.unshift(interview); workspaces.items[0].sessionIds.push(interview.sessionId); notify();
         return structuredClone(interview);
       }
+      case 'realtime.test': {
+        await delay(1200);
+        if (!realtimeReady()) throw Object.assign(new Error('not configured'), { code: 'not-configured' });
+        return { ok: true, checks: { handshake: true, audio: true, transcript: true }, audio: { mimeType: 'audio/wav', base64: wav(0.8) }, latencyMs: { ready: 420, firstAudio: 820, total: 1630 } };
+      }
       case 'task.cancel': return { cancelled: false };
       default: throw Object.assign(new Error(`Preview host has no ${action}`), { code: 'REQUEST_FAILED' });
     }
@@ -121,7 +158,7 @@ export function createFakeHost({ seed = 'empty', voice = 'ready', model = 'ready
     },
     voice: { catalog: async () => ({ asr: { available: false }, tts: { available: false } }), transcribe: async () => { throw new Error('unavailable'); } },
     realtime: {
-      catalog: async () => voice === 'ready' ? { available: true, configured: true } : { available: true, configured: false, reason: 'not-configured' },
+      catalog: async () => realtimeReady() ? { available: true, configured: true } : { available: true, configured: false, reason: 'not-configured' },
       async control() { return {}; },
       async open(_input, { signal, onEvent }) {
         const wait = ms => new Promise((resolve, reject) => { const timer = setTimeout(resolve, ms); signal?.addEventListener('abort', () => { clearTimeout(timer); reject(Object.assign(new Error('aborted'), { name: 'AbortError' })); }, { once: true }); });
@@ -143,7 +180,7 @@ export function createFakeHost({ seed = 'empty', voice = 'ready', model = 'ready
     },
   };
   return {
-    api, data,
+    api, data, configForm, credentials,
     workspaces: { getSnapshot: () => workspaces, subscribe: run => { listeners.add(run); return () => listeners.delete(run); } },
     sessions: { getSnapshot: () => EMPTY_SESSIONS, subscribe: () => () => {} },
   };

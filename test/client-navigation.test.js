@@ -25,68 +25,58 @@ const fixture = () => ({ materials: [
   { id: 'job', kind: 'job', title: 'Role', versions: [{ id: 'j1', confirmed: true }] },
 ], reports: [] });
 
-test('object studio return restores collection session and each object retains its own native conversation', () => {
-  let state = { ...workbench.initialWorkbenchNavigation(), view: 'personal', sessionId: 'global' };
-  const send = event => { state = workbench.workbenchNavigation(state, event); };
-  send({ type: 'openObject', target: { kind: 'material', id: 'A' }, page: 'personal', view: 'personal' });
-  assert.equal(state.sessionId, null);
-  send({ type: 'deskChat', sessionId: 'object-A' });
-  send({ type: 'openObject', target: { kind: 'material', id: 'B' }, page: 'personal', view: 'personal' });
-  assert.equal(state.sessionId, null);
-  send({ type: 'deskChat', sessionId: 'object-B' });
-  send({ type: 'openObject', target: { kind: 'material', id: 'A' }, page: 'personal', view: 'personal' });
-  assert.equal(state.sessionId, 'object-A');
-  send({ type: 'closeObject' }); assert.equal(state.sessionId, 'global'); assert.equal(state.view, 'personal');
-  send({ type: 'openObject', target: { kind: 'material', id: 'B' }, page: 'personal', view: 'personal' });
-  assert.equal(state.sessionId, 'object-B');
-  send({ type: 'deskPage', view: 'reports' }); assert.equal(state.sessionId, 'global'); assert.equal(state.studio, null);
+
+const nav = await compile('client/desk-nav.js');
+const step = (state, ...events) => events.reduce(nav.deskNavigation, state);
+
+test('one state decides the screen: three pages, and the interview room covers them', () => {
+  let state = nav.initialDesk();
+  assert.equal(nav.deskScreen(state), 'interview');
+  state = step(state, { type: 'page', page: 'library' }, { type: 'open', target: { kind: 'material', id: 'm1' } });
+  assert.equal(nav.deskScreen(state), 'library:material');
+  state = step(state, { type: 'room', sessionId: 's1' });
+  assert.equal(nav.deskScreen(state), 'room');
+  // Leaving the room returns to exactly where it was opened from.
+  state = step(state, { type: 'leaveRoom' });
+  assert.equal(nav.deskScreen(state), 'library:material');
+  // A tab click always lands on the tab itself.
+  state = step(state, { type: 'room', sessionId: 's1' }, { type: 'page', page: 'review' });
+  assert.equal(nav.deskScreen(state), 'review'); assert.equal(state.room, null);
+  assert.deepEqual([...nav.DESK_PAGES], ['interview', 'review', 'library']);
 });
 
-test('returning from personal material or another goal restores the exact chat, tab and resume without cross-goal selection', () => {
-  let state = workbench.initialWorkbenchNavigation();
-  const send = event => { state = workbench.workbenchNavigation(state, event); };
-  send({ type: 'goal', goalId: 'A' });
-  send({ type: 'version', value: 'r1' });
-  send({ type: 'tab', value: 'fit' });
-  send({ type: 'chat', goalId: 'A', sessionId: 'session-A' });
-  send({ type: 'view', view: 'personal' });
-  send({ type: 'goal', goalId: 'A' });
-  assert.equal(state.view, 'chat'); assert.equal(state.sessionId, 'session-A');
-  assert.equal(state.byGoal.A.tab, 'fit'); assert.equal(state.byGoal.A.versionId, 'r1');
-  send({ type: 'goal', goalId: 'B' });
-  assert.equal(state.sessionId, null); assert.equal(state.byGoal.B.versionId, '');
-  send({ type: 'version', value: 'r2' });
-  send({ type: 'chat', goalId: 'B', sessionId: 'session-B' });
-  send({ type: 'goal', goalId: 'A' });
-  assert.equal(state.sessionId, 'session-A'); assert.equal(state.byGoal.A.versionId, 'r1');
-  assert.equal(state.byGoal.B.sessionId, 'session-B'); assert.equal(state.byGoal.B.versionId, 'r2');
-  // The goal button remains a way back from its chat to its tabs.
-  send({ type: 'goal', goalId: 'A' });
-  assert.equal(state.view, 'goal'); assert.equal(state.byGoal.A.tab, 'fit');
-  assert.equal(state.sessionId, 'session-A');
+test('unknown pages and sheets are ignored; settings and the assistant never move the page', () => {
+  let state = step(nav.initialDesk(), { type: 'page', page: 'goals' }, { type: 'open', page: 'home', target: { kind: 'goal', id: 'g' } });
+  assert.equal(state.page, 'interview'); assert.equal(state.open, null);
+  state = step(state, { type: 'sheet', sheet: 'score' });
+  assert.equal(state.sheet, 'score');
+  state = step(state, { type: 'sheet', sheet: 'anything' });
+  assert.equal(state.sheet, null);
+  state = step(state, { type: 'sheet', sheet: 'job' }, { type: 'settings', open: true }, { type: 'dock' }, { type: 'session', sessionId: 's2' });
+  assert.equal(state.page, 'interview'); assert.equal(state.sheet, 'job'); assert.equal(state.settings, true);
+  assert.equal(state.sessionId, 's2'); assert.equal(state.dock, true);
+  // Entering the room closes the sheet and the settings window.
+  state = step(state, { type: 'room', sessionId: 's3' });
+  assert.equal(state.sheet, null); assert.equal(state.settings, false);
+  assert.equal(step(state, { type: 'room' }).room, 's3');
 });
 
-test('home and existing chat navigation never replace a goal resume with another conversation context', () => {
-  let state = workbench.initialWorkbenchNavigation();
-  for (const event of [{ type: 'goal', goalId: 'A' }, { type: 'version', value: 'r1' },
-    { type: 'chat', goalId: 'A', sessionId: 'existing-frozen-session' }, { type: 'view', view: 'home' },
-    { type: 'chat', sessionId: 'ungrouped-session' }, { type: 'goal', goalId: 'A' }]) state = workbench.workbenchNavigation(state, event);
-  assert.equal(state.sessionId, 'existing-frozen-session'); assert.equal(state.byGoal.A.versionId, 'r1');
-  assert.equal(state.view, 'chat');
-});
-
-test('cancelled form drafts and unanswered interview text survive navigation and stay scoped to goal, source version and question', () => {
+test('unfinished drafts survive every move and stay scoped to their own key', () => {
   const sourceA = { material: { id: 'm1' }, version: { id: 'v1' } };
   const sourceB = { material: { id: 'm1' }, version: { id: 'v2' } };
   const keys = [workbench.materialDraftKey(sourceA), workbench.materialDraftKey(sourceB),
     workbench.materialDraftKey({ initialKind: 'job', goalId: 'A' }), workbench.materialDraftKey({ initialKind: 'job', goalId: 'B' }),
-    'interview:A', 'answer:interview-1:q1', 'answer:interview-1:q2'];
+    'prepare', 'answer:interview-1:q1', 'answer:interview-1:q2'];
   assert.equal(new Set(keys).size, keys.length);
-  let state = workbench.initialWorkbenchNavigation();
-  keys.forEach((key, index) => { state = workbench.workbenchNavigation(state, { type: 'draft', key, value: { text: `draft-${index}` } }); });
-  for (const event of [{ type: 'view', view: 'personal' }, { type: 'goal', goalId: 'A' }, { type: 'goal', goalId: 'B' }, { type: 'view', view: 'home' }]) state = workbench.workbenchNavigation(state, event);
+  let state = nav.initialDesk();
+  keys.forEach((key, index) => { state = nav.deskNavigation(state, { type: 'draft', key, value: { text: `draft-${index}` } }); });
+  state = step(state, { type: 'page', page: 'library' }, { type: 'open', target: { kind: 'goal', id: 'A' } }, { type: 'room', sessionId: 's' },
+    { type: 'leaveRoom' }, { type: 'page', page: 'review' }, { type: 'settings', open: true }, { type: 'page', page: 'interview' });
   keys.forEach((key, index) => assert.equal(state.drafts[key].text, `draft-${index}`));
-  state = workbench.workbenchNavigation(state, { type: 'draft', key: keys[0], value: undefined });
+  // Saving a draft never moves the user.
+  const before = { page: state.page, open: state.open, room: state.room, sheet: state.sheet };
+  state = nav.deskNavigation(state, { type: 'draft', key: keys[0], value: undefined });
+  assert.deepEqual({ page: state.page, open: state.open, room: state.room, sheet: state.sheet }, before);
   assert.equal(state.drafts[keys[0]], undefined); assert.equal(state.drafts[keys[1]].text, 'draft-1');
 });
 
@@ -129,22 +119,4 @@ test('rapid duplicate submission is ignored and a failed request can be retried'
   finish('saved'); assert.equal(await request, 'saved');
   await assert.rejects(guard(async () => { calls++; throw new Error('network'); }), /network/);
   assert.equal(await guard(async () => { calls++; return 'retry-saved'; }), 'retry-saved'); assert.equal(calls, 3);
-});
-
-test('expanded assistant returns to the same material workspace without changing the retained Session', () => {
-  let state = workbench.initialWorkbenchNavigation();
-  for (const event of [{ type: 'goal', goalId: 'A' }, { type: 'deskChat', sessionId: 's1' }, { type: 'view', view: 'personal' },
-    { type: 'chat', goalId: 'A', sessionId: 's1' }, { type: 'workspace' }]) state = workbench.workbenchNavigation(state, event);
-  assert.equal(state.view, 'personal'); assert.equal(state.sessionId, 's1'); assert.equal(state.goalId, 'A');
-  state = workbench.workbenchNavigation(state, { type: 'view', view: 'home' });
-  assert.equal(state.sessionId, 's1');
-});
-
-test('starting an assistant from a material page preserves that page and the role selections', () => {
-  let state = workbench.initialWorkbenchNavigation();
-  for (const event of [{ type: 'goal', goalId: 'A' }, { type: 'version', value: 'resume-v1' },
-    { type: 'tab', value: 'rewrite' }, { type: 'view', view: 'personal' }, { type: 'deskChat', sessionId: 'new-s1' }])
-    state = workbench.workbenchNavigation(state, event);
-  assert.equal(state.view, 'personal'); assert.equal(state.byGoal.A.versionId, 'resume-v1');
-  assert.equal(state.byGoal.A.tab, 'rewrite'); assert.equal(state.byGoal.A.sessionId, 'new-s1');
 });

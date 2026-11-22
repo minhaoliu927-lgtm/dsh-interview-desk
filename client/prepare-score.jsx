@@ -70,10 +70,10 @@ function EditPanel({ text, onChange, onSave, onClose, busy, t }) {
 }
 
 /**
- * The score step. It only shows saved assessments and rewrites; the parent
- * runs the Host actions. `working` names the action in flight, if any.
+ * The resume score, shown in a side sheet. It only shows saved assessments and
+ * rewrites; the parent runs the Host actions. `working` names the action in flight.
  */
-export function ScoreStep({ t, busy, ready, score, previous, working, failure, panel, skipped,
+export function ScorePanel({ t, busy, ready, score, previous, working, failure, panel, skipped,
   onScore, onRevise, onEdit, onSkip, onContinue, onPanel, onApply, onSave }) {
   const scoring = working === 'score';
   const { total, status, pass } = score;
@@ -112,25 +112,22 @@ export function ScoreStep({ t, busy, ready, score, previous, working, failure, p
     </>}</div>
   </>;
 
-  return <section className="zj-sec is-score" data-step="score" aria-label={t('prepScoreStep')} ref={section}>
-    <div className={`zj-axis${pass || skipped ? ' is-lit' : ''}`} aria-hidden="true"/>
-    <Dial total={scoring ? null : total} busy={scoring} t={t}/>
-    <div className={`zj-side is-l${ready ? '' : ' is-quiet'}`}><div className="zj-block zj-reveal">
-      <h2>{t('prepFitTitle')}</h2><p className="zj-block-note">{t('prepFitNote')}</p>
-      <Criteria kind="fit" assessment={score.fit} busy={scoring && !score.fit} t={t}/>
-    </div></div>
-    <div className={`zj-side is-r${ready ? '' : ' is-quiet'}`}><div className="zj-block zj-reveal">
-      <h2>{t('prepResumeTitle')}</h2><p className="zj-block-note">{t('prepResumeNote')}</p>
-      <Criteria kind="resume" assessment={score.resume} busy={scoring && !score.resume} t={t}/>
-    </div></div>
-    <div className="zj-bar zj-reveal">
-      <div className="zj-fade" key={`${status}:${total}:${scoring}`}>{verdict}</div>
-      {failure && !scoring && <div className="zj-bar-note" role="alert"><span>{failure}</span></div>}
+  return <div className="zj-score-panel" data-score="" ref={section}>
+    <div className="zj-score-top">
+      <Dial total={scoring ? null : total} busy={scoring} t={t}/>
+      <div className="zj-score-verdict"><div className="zj-fade" key={`${status}:${total}:${scoring}`}>{verdict}</div>
+        {failure && !scoring && <p className="zj-warn-line" role="alert">{failure}</p>}</div>
     </div>
     {working === 'revise' && !panel && <div className="zj-revise zj-fade" data-panel="" role="status"><p className="zj-revise-head" style={{ margin: 0 }}>{t('prepRevising')}</p></div>}
     {panel?.kind === 'rewrite' && <RewritePanel rewrite={panel.rewrite} selected={panel.selected} busy={busy}
       onToggle={(id, on) => onPanel({ ...panel, selected: on ? [...new Set([...panel.selected, id])] : panel.selected.filter(item => item !== id) })}
       onApply={onApply} onClose={() => onPanel(null)} t={t}/>}
     {panel?.kind === 'edit' && <EditPanel text={panel.text} busy={busy} onChange={text => onPanel({ ...panel, text })} onSave={onSave} onClose={() => onPanel(null)} t={t}/>}
-  </section>;
+    <div className="zj-score-parts">
+      <section className={ready ? '' : 'is-quiet'}><h3>{t('prepFitTitle')}</h3><p className="zj-hint">{t('prepFitNote')}</p>
+        <Criteria kind="fit" assessment={score.fit} busy={scoring && !score.fit} t={t}/></section>
+      <section className={ready ? '' : 'is-quiet'}><h3>{t('prepResumeTitle')}</h3><p className="zj-hint">{t('prepResumeNote')}</p>
+        <Criteria kind="resume" assessment={score.resume} busy={scoring && !score.resume} t={t}/></section>
+    </div>
+  </div>;
 }

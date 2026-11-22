@@ -32,6 +32,52 @@ export function Modal({ title, children, onClose, t, busy = false }) {
   </section></div>;
 }
 
+/** Keyboard behaviour shared by dialogs and side sheets: Escape closes, Tab stays inside. */
+function useTrap(ref, onClose, busy) {
+  React.useEffect(() => {
+    const previous = document.activeElement;
+    (ref.current?.querySelector('[data-autofocus]') || ref.current?.querySelector('input,textarea,select') || ref.current?.querySelector('button'))?.focus();
+    return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+  }, []);
+  return event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!busy) onClose(); }
+    if (event.key !== 'Tab') return;
+    const controls = [...ref.current.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]')];
+    const first = controls[0], last = controls.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  };
+}
+
+const CloseIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>;
+
+/** A panel that slides in from the right over the page. Clicking outside closes it. */
+export function Sheet({ title, children, onClose, t, busy = false, wide = false }) {
+  const ref = React.useRef(null);
+  const keydown = useTrap(ref, onClose, busy);
+  const titleId = React.useId();
+  return <div className="zj-scrim is-side" onKeyDown={keydown} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <section ref={ref} className={`zj-sheet${wide ? ' is-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <header className="zj-sheet-head"><h2 id={titleId}>{title}</h2><button type="button" className="zj-icon-btn" aria-label={t('close')} disabled={busy} onClick={onClose}><CloseIcon/></button></header>
+      <div className="zj-sheet-body">{children}</div>
+    </section>
+  </div>;
+}
+
+/** A centred window, used for settings. */
+export function Window({ title, children, onClose, t, busy = false, footer = null }) {
+  const ref = React.useRef(null);
+  const keydown = useTrap(ref, onClose, busy);
+  const titleId = React.useId();
+  return <div className="zj-scrim" onKeyDown={keydown} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <section ref={ref} className="zj-window" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <header className="zj-window-head"><h2 id={titleId}>{title}</h2><button type="button" className="zj-icon-btn" aria-label={t('close')} onClick={onClose}><CloseIcon/></button></header>
+      <div className="zj-window-body">{children}</div>
+      {footer && <footer className="zj-window-foot">{footer}</footer>}
+    </section>
+  </div>;
+}
+
 export function Tabs({ values, active, onChange, t }) {
   const navigate = event => {
     if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;

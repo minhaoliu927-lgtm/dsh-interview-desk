@@ -5,146 +5,113 @@ import shellCss from './css/shell.css';
 import flowCss from './css/flow.css';
 import roomCss from './css/room.css';
 import scoreCss from './css/score.css';
-import { Prepare } from './prepare.jsx';
-import { Button, GoalForm, Mark, MaterialForm, MaterialPicker, Modal, Tabs, TaskCancelContext, createSubmissionGuard } from './components.jsx';
-import { Materials, GoalMaterials } from './materials.jsx';
-import { Analysis, ResumeSelect } from './analysis.jsx';
-import { Interview, InterviewForm, interviewFormDraft } from './interview.jsx';
+import desk10Css from './css/desk.css';
+import { Prepare, initialPrepareDraft } from './prepare.jsx';
+import { Button, GoalForm, Mark, MaterialForm, MaterialPicker, Modal, TaskCancelContext, createSubmissionGuard } from './components.jsx';
+import { Interview } from './interview.jsx';
 import { NativeChat } from './native-chat.jsx';
 import { citationSource, quoteSegments, versionEntry } from './model.js';
 import { SourceDialog } from './source.jsx';
-import { VoiceSetup } from './voice-ui.jsx';
-import { TaskCard, ReceiptList } from './task-card.jsx';
+import { TaskCard, ReceiptList, receiptLabel } from './task-card.jsx';
 import { materialChatContext, contextDraft } from './desk-context.js';
-import { Collection, StudioHeader, ResultStudio } from './desk-views.jsx';
-import { DESK_PAGES, PAGE_LABELS, collectionRows, filterCollection, objectKey } from './desk-collections.js';
+import { SettingsDialog } from './settings-dialog.jsx';
+import { ReviewPage } from './review-page.jsx';
+import { LibraryPage } from './library-page.jsx';
+import { DESK_PAGES, deskNavigation, initialDesk } from './desk-nav.js';
+import { realtimeUnavailable } from './voice/realtime-call.js';
 
-export function initialWorkbenchNavigation() {
-  return { view: 'home', goalId: null, sessionId: null, byGoal: {}, drafts: {} };
-}
+export { deskNavigation, initialDesk } from './desk-nav.js';
 
-// Navigation and unfinished input are scoped to this mounted workbench, never to
-// browser storage or another user. Session history remains owned by DSH.
-export function workbenchNavigation(state, event) {
-  if (event.type === 'openObject') {
-    const key = objectKey(event.target);
-    const byObject = { ...state.byObject };
-    if (state.studio) byObject[objectKey(state.studio.target)] = state.sessionId;
-    return { ...state, view: event.view, goalId: event.goalId || null,
-      sessionId: event.sessionId || byObject[key] || null, byObject,
-      studio: { target: event.target, origin: state.studio?.origin || { view: state.view, goalId: state.goalId, sessionId: state.sessionId }, page: state.studio?.page || event.page || 'home' } };
-  }
-  if (event.type === 'closeObject') {
-    if (!state.studio) return state;
-    return { ...state, ...state.studio.origin, byObject: { ...state.byObject, [objectKey(state.studio.target)]: state.sessionId }, studio: null };
-  }
-  if (event.type === 'deskPage') {
-    const prior = state.studio ? workbenchNavigation(state, { type: 'closeObject' }) : state;
-    return { ...prior, view: event.view, studio: null, goalId: null };
-  }
-  if (event.type === 'draft') {
-    const drafts = { ...state.drafts };
-    if (event.value === undefined) delete drafts[event.key]; else drafts[event.key] = event.value;
-    return { ...state, drafts };
-  }
-  if (event.type === 'view') return { ...state, view: event.view,
-    ...(event.view === 'home' ? { goalId: null } : {}) };
-  if (event.type === 'workspace') return { ...state, view: state.returnView || (state.goalId ? 'goal' : 'home') };
-  if (event.type === 'deskChat') return { ...state, sessionId: event.sessionId,
-    byGoal: state.goalId ? { ...state.byGoal, [state.goalId]: { ...state.byGoal[state.goalId], sessionId: event.sessionId } } : state.byGoal };
-  if (event.type === 'goal') {
-    const saved = state.byGoal[event.goalId];
-    // Clicking the current goal from its chat opens the goal's own tabs. Coming
-    // back from another section restores the last visited view and exact Session.
-    const view = state.goalId === event.goalId && state.view === 'chat' ? 'goal' : saved?.view || 'goal';
-    return { ...state, view, goalId: event.goalId, sessionId: saved?.sessionId || null,
-      byGoal: { ...state.byGoal, [event.goalId]: { tab: 'overview', versionId: '', ...saved, view } } };
-  }
-  if (event.type === 'chat') {
-    const goalId = event.goalId || null;
-    return { ...state, view: 'chat', goalId, sessionId: event.sessionId,
-      returnView: state.view !== 'chat' && state.goalId === goalId ? state.view : goalId ? 'goal' : 'home',
-      byGoal: goalId ? { ...state.byGoal, [goalId]: { tab: 'overview', versionId: '', ...state.byGoal[goalId], view: 'chat', sessionId: event.sessionId } } : state.byGoal };
-  }
-  if ((event.type === 'tab' || event.type === 'version') && state.goalId) {
-    return { ...state, byGoal: { ...state.byGoal, [state.goalId]: { ...state.byGoal[state.goalId],
-      [event.type === 'tab' ? 'tab' : 'versionId']: event.value } } };
-  }
-  return state;
-}
+const PAGE_LABELS = { interview: 'navInterview', review: 'navReview', library: 'navLibrary' };
+const ERRORS = new Set(['NATIVE_DRAFT_UNAVAILABLE', 'NATIVE_DRAFT_BLOCKED', 'CONTEXT_UNAVAILABLE', 'NETWORK', 'FILE_TOO_LARGE', 'JOB_MATERIAL_REQUIRED', 'INVALID_RESPONSE', 'REQUEST_FAILED', 'EXPORT_FAILED', 'WORKSPACE_REQUIRED']);
+const newest = (a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
 
-export function materialDraftKey(modal) {
-  return modal?.material ? `material:${modal.material.id}:${modal.version?.id || ''}` : `material:new:${modal?.goalId || ''}:${modal?.initialKind || 'resume'}`;
+const Gear = () => <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>;
+const Bubble = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>;
+const Close = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>;
+
+/** Whether the voice interview service is configured. Rechecked when the panel becomes visible again. */
+export function useVoiceStatus(realtimeApi) {
+  const [catalog, setCatalog] = React.useState(null), [checking, setChecking] = React.useState(false);
+  const alive = React.useRef(true);
+  const check = React.useCallback(async () => {
+    if (typeof realtimeApi?.catalog !== 'function') return;
+    setChecking(true);
+    try { const result = await realtimeApi.catalog(); if (alive.current) setCatalog(result); }
+    catch { if (alive.current) setCatalog(null); }
+    finally { if (alive.current) setChecking(false); }
+  }, [realtimeApi]);
+  React.useEffect(() => { alive.current = true; void check(); return () => { alive.current = false; }; }, [check]);
+  React.useEffect(() => {
+    const view = globalThis.document;
+    if (!view?.addEventListener) return undefined;
+    const onVisible = () => { if (!view.hidden) void check(); };
+    view.addEventListener('visibilitychange', onVisible);
+    return () => view.removeEventListener('visibilitychange', onVisible);
+  }, [check]);
+  return { catalog, checking, check, ready: Boolean(catalog) && !realtimeUnavailable(catalog) };
 }
 
 export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, action, upload, refresh, cancelCurrent, retryCurrent, createConversation, startInterview, interviewAction, download,
-  voiceApi, realtimeApi, prepareChatDraft, openRealtimeSettings, enableVoiceInput, openVoiceSettings, openWorkspaceManager, readSource, loadOriginal, downloadOriginal, useResource, SessionProvider, renderSlot }) {
+  voiceApi, realtimeApi, prepareChatDraft, enableVoiceInput, openVoiceSettings, openWorkspaceManager, readSource, loadOriginal, downloadOriginal, useResource, SessionProvider, renderSlot,
+  useRealtimeSettings, settingsActions = {} }) {
   const snapshot = useCareer(value => value);
   const state = snapshot.data;
-  const [navigation, navigate] = React.useReducer(workbenchNavigation, undefined, initialWorkbenchNavigation);
-  const { view, goalId, sessionId, drafts, studio } = navigation;
-  const [collections, setCollections] = React.useState({});
-  const [focusResult, setFocusResult] = React.useState(false);
-  const [chatExpanded, setChatExpanded] = React.useState(false);
-  const navigationRef = React.useRef(navigation); navigationRef.current = navigation;
-  const [dockOpen, setDockOpen] = React.useState(true);
-  const [prepareSkipped, setPrepareSkipped] = React.useState(false);
-  // Scoring creates the goal before the interview starts; stay in the flow until it is left or started.
-  const [prepareHeld, setPrepareHeld] = React.useState(false);
-  const [narrow, setNarrow] = React.useState(false);
-  const [context, setContext] = React.useState(null);
-  const [contextNotice, setContextNotice] = React.useState(null);
-  const rootRef = React.useRef(null);
-  const returnFocus = React.useRef(null);
-  React.useLayoutEffect(() => {
-    if (!studio && returnFocus.current) {
-      const button = [...(rootRef.current?.querySelectorAll('[data-object-key]') || [])].find(node => node.dataset.objectKey === returnFocus.current);
-      button?.focus({ preventScroll: true }); returnFocus.current = null;
-    }
-  }, [studio]);
-  React.useEffect(() => {
-    if (!rootRef.current || typeof ResizeObserver !== 'function') return;
-    const observer = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < 1180));
-    observer.observe(rootRef.current); return () => observer.disconnect();
-  }, []);
-  React.useEffect(() => { if (narrow) setDockOpen(false); }, [narrow]);
-  React.useEffect(() => { setContext(value => value?.sessionId === sessionId ? value : null); setContextNotice(null); }, [sessionId]);
-  const selectedGoal = navigation.byGoal[goalId];
-  const selectedResume = versionEntry(state, selectedGoal?.versionId);
-  const versionId = selectedResume?.material.kind === 'resume' && selectedResume.version.confirmed ? selectedResume.version.id : '';
-  const tab = selectedGoal?.tab || 'overview';
-  const setVersionId = value => navigate({ type: 'version', value });
-  const setTab = value => navigate({ type: 'tab', value });
-  const setView = view => navigate({ type: 'view', view });
+  const [nav, navigate] = React.useReducer(deskNavigation, undefined, initialDesk);
+  const navRef = React.useRef(nav); navRef.current = nav;
+  const drafts = nav.drafts;
   const saveDraft = (key, value) => navigate({ type: 'draft', key, value });
-  const [materialId, setMaterialId] = React.useState(null);
-  const [materialVersionId, setMaterialVersionId] = React.useState(null);
+  const voice = useVoiceStatus(realtimeApi);
+  const [narrow, setNarrow] = React.useState(false);
   const [modal, setModal] = React.useState(null);
   const [error, setError] = React.useState(null);
   const [localPending, setLocalPending] = React.useState(0);
-  const [pendingLink, setPendingLink] = React.useState(null);
+  const [context, setContext] = React.useState(null);
+  const [contextNotice, setContextNotice] = React.useState(null);
+  const [toast, setToast] = React.useState(null);
+  const rootRef = React.useRef(null), toastTimer = React.useRef(null);
   const submissionGuard = React.useRef(null);
   if (!submissionGuard.current) submissionGuard.current = createSubmissionGuard();
-  const currentModal = React.useRef(modal);
-  currentModal.current = modal;
+  const currentModal = React.useRef(modal); currentModal.current = modal;
+
+  React.useEffect(() => {
+    if (!rootRef.current || typeof ResizeObserver !== 'function') return undefined;
+    const observer = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < 1100));
+    observer.observe(rootRef.current); return () => observer.disconnect();
+  }, []);
+  React.useEffect(() => { if (narrow) navigate({ type: 'dock', open: false }); }, [narrow]);
+  React.useEffect(() => () => clearTimeout(toastTimer.current), []);
+  const say = (text, receipt = null) => {
+    clearTimeout(toastTimer.current);
+    setToast({ text, receipt, key: Date.now() });
+    toastTimer.current = setTimeout(() => setToast(null), receipt ? 6500 : 3800);
+  };
+
+  // Workspaces: chosen in settings; one workspace (or the one the main view already uses) is chosen for the user.
   const nativeSessions = useNativeSessions(value => value);
   const workspaceChoices = useWorkspaceChoices(value => value);
   const [workspaceId, setWorkspaceId] = React.useState('');
-  const workspaceAnchor = React.useRef(null);
   const mainSessions = nativeSessions.ids.filter(id => nativeSessions.byId[id]?.retainedBy?.mainView > 0);
   const inheritedWorkspace = mainSessions.length === 1 ? workspaceChoices.items.find(row => row.sessionIds.includes(mainSessions[0])) : undefined;
   const selectedWorkspace = workspaceChoices.items.find(row => row.workspaceId === workspaceId)
     || (!workspaceId ? inheritedWorkspace || (workspaceChoices.items.length === 1 ? workspaceChoices.items[0] : undefined) : undefined);
-  const sessionWorkspace = workspaceChoices.items.find(row => row.sessionIds.includes(sessionId));
-  const nativeRunning = Boolean(nativeSessions.byId[sessionId]?.running);
-  const goal = state.goals.find(row => row.id === goalId);
+  const restoreWorkspace = id => { const workspace = workspaceChoices.items.find(row => row.sessionIds.includes(id)); if (workspace) setWorkspaceId(workspace.workspaceId); };
+
+  // The interview page keeps its own draft; until the user edits it, it starts from the newest role and resume.
+  const prepareDraft = drafts.prepare ?? (snapshot.ready ? initialPrepareDraft(state) : undefined);
   const conversations = state.conversations || state.goals.flatMap(row => row.conversations);
-  const conversation = conversations.find(row => row.sessionId === sessionId);
+  const chats = conversations.filter(row => row.kind !== 'interview').sort(newest);
+  const unfinished = [...state.interviews].filter(row => row.status !== 'completed' && row.sessionId && row.goalId && row.goalId === prepareDraft?.goalId).sort(newest)[0] || null;
+  const roomInterview = nav.room ? state.interviews.find(row => row.sessionId === nav.room) : null;
+  const dockSession = nav.room ? (roomInterview?.mode === 'text' ? nav.room : null)
+    : nav.sessionId || chats.find(row => row.goalId && row.goalId === prepareDraft?.goalId)?.sessionId || chats[0]?.sessionId || null;
+  const dockConversation = conversations.find(row => row.sessionId === dockSession);
   const conversationTitle = row => nativeSessions.byId[row.sessionId]?.title || row.title;
-  const interview = state.interviews.find(row => row.sessionId === sessionId);
+  const sessionWorkspace = workspaceChoices.items.find(row => row.sessionIds.includes(dockSession));
+  const nativeRunning = Boolean(nativeSessions.byId[dockSession]?.running);
   const busy = localPending > 0 || snapshot.pending > 0 || nativeRunning;
   const currentError = error || snapshot.error;
-  const errors = new Set(['NATIVE_DRAFT_UNAVAILABLE','NATIVE_DRAFT_BLOCKED','CONTEXT_UNAVAILABLE','NETWORK','FILE_TOO_LARGE','JOB_MATERIAL_REQUIRED','INVALID_RESPONSE','REQUEST_FAILED','EXPORT_FAILED','WORKSPACE_REQUIRED']);
+  React.useEffect(() => { setContext(value => value?.sessionId === dockSession ? value : null); setContextNotice(null); }, [dockSession]);
 
   const run = (operation, success) => submissionGuard.current(async () => {
     setError(null);
@@ -156,214 +123,189 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
   const perform = (name, input) => run(() => action(name, input));
   const performInterview = (name, input) => run(() => interviewAction(name, input));
   const exportFile = (kind, id, format) => run(() => download(kind, id, format));
-  const restoreWorkspace = id => {
-    const workspace = workspaceChoices.items.find(row => row.sessionIds.includes(id));
-    if (workspace) setWorkspaceId(workspace.workspaceId);
+  const openSettings = () => { navigate({ type: 'settings', open: true }); return true; };
+  const manageWorkspaces = () => run(async () => { if (!openWorkspaceManager?.()) throw new Error(t('unavailable')); });
+  const needWorkspace = () => { setError({ code: 'WORKSPACE_REQUIRED' }); openSettings(); };
+
+  // New undoable saves announce themselves once, with the undo next to the message.
+  const undoReceipt = receipt => run(() => action('receipt.undo', { receiptId: receipt.id }));
+  const newestUndo = (state.receipts || []).find(row => row.undo?.available);
+  const seenUndo = React.useRef(undefined);
+  React.useEffect(() => {
+    if (!snapshot.ready) return;
+    if (seenUndo.current === undefined) { seenUndo.current = newestUndo?.id ?? null; return; }
+    if (newestUndo && newestUndo.id !== seenUndo.current) say(t(receiptLabel(newestUndo.action)), newestUndo);
+    seenUndo.current = newestUndo?.id ?? null;
+  }, [snapshot.ready, newestUndo?.id]);
+  React.useEffect(() => {
+    const onKey = event => {
+      if (!rootRef.current?.contains(event.target) || modal || nav.settings) return;
+      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || event.target.isContentEditable;
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey && !typing && newestUndo && !busy) { event.preventDefault(); void undoReceipt(newestUndo); }
+    };
+    const root = rootRef.current; root?.addEventListener('keydown', onKey); return () => root?.removeEventListener('keydown', onKey);
+  }, [modal, nav.settings, newestUndo?.id, busy]);
+
+  const enterRoom = sessionId => { if (!sessionId) return; restoreWorkspace(sessionId); navigate({ type: 'room', sessionId }); };
+  const startPrepared = input => {
+    if (!selectedWorkspace) { needWorkspace(); return Promise.resolve(undefined); }
+    return run(() => startInterview({ ...input, workspaceId: selectedWorkspace.workspaceId }), result => { if (result?.sessionId) enterRoom(result.sessionId); void refresh?.(); });
   };
-  const selectGoal = id => openObject({ kind: 'goal', id }, 'goals');
-  const selectChat = row => { restoreWorkspace(row.sessionId); navigate({ type: 'closeObject' }); navigate({ type: 'chat', goalId: row.goalId, sessionId: row.sessionId }); };
-  const newChat = id => {
-    if (!selectedWorkspace) { workspaceAnchor.current?.focus(); return; }
-    const materialVersion = studio?.target.kind === 'material' ? versionEntry(state, materialVersionId || state.materials.find(row => row.id === studio.target.id)?.latestVersionId) : null;
-    const artifactVersion = studio && collectionRows(state, 'reports').find(row => row.kind === studio.target.kind && row.id === studio.target.id)?.versionId;
-    const selected = artifactVersion || (materialVersion?.version.confirmed ? materialVersion.version.id : id && versionEntry(state, versionId)?.version.confirmed ? versionId : undefined);
-    return run(() => createConversation(id, t('untitledChat'), selected, selectedWorkspace.workspaceId, studio?.target), row => {
-    setDockOpen(true);
-    if (studio) navigate({ type: 'deskChat', sessionId: row.sessionId }); else selectChat({ ...row, goalId: id });
-    });
+  const leaveRoom = () => { navigate({ type: 'leaveRoom' }); void refresh?.(); };
+
+  const newChat = goalId => {
+    if (!selectedWorkspace) { needWorkspace(); return; }
+    const resumeVersion = versionEntry(state, prepareDraft?.resumeVersionId);
+    const versionId = resumeVersion?.material.kind === 'resume' && resumeVersion.version.confirmed ? resumeVersion.version.id : undefined;
+    return run(() => createConversation(goalId || null, t('untitledChat'), versionId, selectedWorkspace.workspaceId), row => navigate({ type: 'session', sessionId: row.sessionId }));
   };
-  const openInterview = () => {
-    if (!selectedWorkspace) { workspaceAnchor.current?.focus(); return; }
-    const key = `interview:${goalId}`;
-    saveDraft(key, interviewFormDraft(state, versionId, drafts[key]));
-    setModal({ kind: 'interview', goalId });
-  };
-  const addMaterial = (kind = 'resume', targetGoal = null) => setModal({ kind: 'material', initialKind: kind, goalId: targetGoal });
-  const materialSaved = material => {
-    if (modal?.goalId) setPendingLink({ materialId: material.id, goalId: modal.goalId });
-    saveDraft(materialDraftKey(modal), undefined);
-    if (currentModal.current === modal) { setModal(null); openObject({ kind: 'material', id: material.id, versionId: material.latestVersionId }, 'personal'); }
-  };
-  const confirmVersion = selectedVersionId => run(async () => {
-    const result = await action('material.confirm', { versionId: selectedVersionId });
-    if (pendingLink && result.materialId === pendingLink.materialId) await action('goal.linkMaterial', { goalId: pendingLink.goalId, versionId: selectedVersionId });
-    return result;
-  }, result => { if (pendingLink && result.materialId === pendingLink.materialId) { selectGoal(pendingLink.goalId); setPendingLink(null); } });
   const askContext = (id, passage) => {
     const selected = materialChatContext(state, id, passage);
     if (!selected) { setError({ code: 'CONTEXT_UNAVAILABLE' }); return; }
-    if ((!sessionId || interview) && !selectedWorkspace) { workspaceAnchor.current?.focus(); setError({ code: 'WORKSPACE_REQUIRED' }); return; }
-    const scope = navigationRef.current;
+    if (!dockSession && !selectedWorkspace) { needWorkspace(); return; }
+    const scope = navRef.current;
     return run(async () => {
-      let target = interview ? null : sessionId;
+      let target = nav.room ? null : dockSession;
       if (!target) {
-        const row = await createConversation(goalId, t('untitledChat'), selected.kind === 'resume' || studio?.target.kind === 'material' ? id : undefined, selectedWorkspace.workspaceId, studio?.target);
+        const row = await createConversation(prepareDraft?.goalId || null, t('untitledChat'), selected.kind === 'resume' ? id : undefined, selectedWorkspace.workspaceId);
         target = row.sessionId;
       }
-      if (navigationRef.current !== scope) return;
-      if (target !== sessionId) navigate({ type: 'deskChat', sessionId: target });
-      setDockOpen(true); setContextNotice(null); setContext({ ...selected, sessionId: target });
+      if (navRef.current.page !== scope.page || navRef.current.room !== scope.room) return;
+      navigate({ type: 'session', sessionId: target });
+      setContextNotice(null); setContext({ ...selected, sessionId: target });
     });
   };
   const addContextDraft = () => {
     const selected = context;
-    if (!selected || selected.sessionId !== sessionId || interview) return;
+    if (!selected || selected.sessionId !== dockSession) return;
     return run(async () => {
       if (!prepareChatDraft) throw Object.assign(new Error(t('unavailable')), { code: 'NATIVE_DRAFT_UNAVAILABLE' });
       await prepareChatDraft(selected.sessionId, contextDraft(selected, t));
       setContext(value => value === selected ? null : value);
-      if (navigationRef.current.sessionId === selected.sessionId) setContextNotice(t('contextAdded'));
+      setContextNotice(t('contextAdded'));
     });
   };
   const prepareSuggestion = key => {
-    if (!selectedWorkspace && !sessionId) { workspaceAnchor.current?.focus(); setError({ code: 'WORKSPACE_REQUIRED' }); return; }
-    const scope = navigationRef.current;
+    if (!dockSession && !selectedWorkspace) { needWorkspace(); return; }
     return run(async () => {
-      let target = sessionId;
-      if (!target) {
-        const candidate = studio?.target.kind === 'material' ? materialVersionId || state.materials.find(row => row.id === studio.target.id)?.latestVersionId : versionId;
-        const entry = versionEntry(state, candidate);
-        const artifactVersion = studio && collectionRows(state, 'reports').find(row => row.kind === studio.target.kind && row.id === studio.target.id)?.versionId;
-        const row = await createConversation(goalId, t('untitledChat'), artifactVersion || (entry?.version.confirmed && (entry.material.kind === 'resume' || studio?.target.kind === 'material') ? candidate : undefined), selectedWorkspace.workspaceId, studio?.target);
-        target = row.sessionId;
-      }
-      if (navigationRef.current !== scope) return;
+      let target = dockSession;
+      if (!target) target = (await createConversation(prepareDraft?.goalId || null, t('untitledChat'), undefined, selectedWorkspace.workspaceId)).sessionId;
       if (!prepareChatDraft) throw Object.assign(new Error(t('unavailable')), { code: 'NATIVE_DRAFT_UNAVAILABLE' });
       await prepareChatDraft(target, t(key));
-      if (navigationRef.current !== scope) return;
-      navigate({ type: 'deskChat', sessionId: target }); setDockOpen(true); setContextNotice(t('contextAdded'));
+      navigate({ type: 'session', sessionId: target }); setContextNotice(t('contextAdded'));
     });
   };
-  const nativeChat = sessionId ? sessionWorkspace ? <NativeChat key={sessionId} sessionId={sessionId} t={t} useResource={useResource} SessionProvider={SessionProvider} renderSlot={renderSlot}/> : <div className="zj-body"><p className="zj-error">{workspaceChoices.phase === 'ready' ? t('floatingConversation') : t('loading')}</p></div> : null;
-  const title = view === 'personal' ? t('personal') : (view === 'chat' && conversation && conversationTitle(conversation)) || goal?.title || t('panel');
+
+  const addMaterial = (kind = 'resume', goalId = null) => setModal({ kind: 'material', initialKind: kind, goalId });
+  const materialSaved = material => {
+    const opened = currentModal.current;
+    saveDraft(materialKey(opened), undefined);
+    if (opened?.goalId && material?.latestVersionId) void perform('goal.linkMaterial', { goalId: opened.goalId, versionId: material.latestVersionId });
+    if (currentModal.current === opened) { setModal(null); navigate({ type: 'open', page: 'library', target: { kind: 'material', id: material.id, versionId: material.latestVersionId } }); }
+  };
+  const confirmVersion = versionId => perform('material.confirm', { versionId });
+  const reviewVersion = versionId => { const entry = versionEntry(state, versionId); if (entry) navigate({ type: 'open', page: 'library', target: { kind: 'material', id: entry.material.id, versionId } }); };
   const showEvidence = citation => setModal({ kind: 'citation', citation });
+  const useRole = goal => {
+    const job = (goal.materialLinks || []).map(link => versionEntry(state, link.versionId)).filter(entry => entry?.material.kind === 'job' && entry.version.confirmed)
+      .sort((a, b) => b.version.revision - a.version.revision)[0];
+    saveDraft('prepare', { ...(prepareDraft || {}), role: goal.title || '', goalId: goal.id, jobVersionId: job?.version.id || null, scoreSkippedFor: null });
+    navigate({ type: 'page', page: 'interview' });
+  };
+  // Receipts and finished tasks point at what they made; open it where it lives.
+  const openTarget = target => {
+    if (!target) return;
+    if (target.kind === 'material') navigate({ type: 'open', page: 'library', target: { kind: 'material', id: target.id, versionId: target.versionId } });
+    else if (target.kind === 'goal') navigate({ type: 'open', page: 'library', target: { kind: 'goal', id: target.id } });
+    else if (target.kind === 'interview') enterRoom(state.interviews.find(row => row.id === target.id)?.sessionId);
+    else if (['report', 'assessment', 'rewrite'].includes(target.kind)) navigate({ type: 'open', page: 'review', target: { kind: target.kind, id: target.id } });
+  };
   const source = modal?.kind === 'citation' ? citationSource(state, modal.citation.sourceId) : null;
   const segments = source ? quoteSegments(source.text, modal.citation) : null;
-  const reviewVersion = selectedVersionId => {
-    const entry = versionEntry(state, selectedVersionId);
-    if (entry) openObject({ kind: 'material', id: entry.material.id, versionId: entry.version.id }, 'personal');
-  };
+  const linkGoal = modal?.kind === 'linkMaterial' ? state.goals.find(row => row.id === modal.goalId) : null;
 
-  function openObject(target, page) {
-    let nextView, nextGoal = target.goalId || null, nextSession = null;
-    if (target.kind === 'material') { nextView = 'personal'; setMaterialId(target.id); setMaterialVersionId(target.versionId || null); }
-    else if (target.kind === 'goal') { nextView = 'goal'; nextGoal = target.id; }
-    else if (target.kind === 'interview' || target.kind === 'conversation') {
-      const row = (target.kind === 'interview' ? state.interviews : conversations).find(row => row.id === target.id);
-      if (!row) return;
-      nextView = 'chat'; nextGoal = row.goalId; nextSession = row.sessionId;
-    } else { nextView = 'result'; const row = collectionRows(state, 'reports').find(row => row.kind === target.kind && row.id === target.id); if (!row) return; nextGoal = row.goalId; }
-    const stored = navigation.byObject?.[objectKey(target)] || state.deskConversations?.find(row => row.kind === target.kind && row.id === target.id)?.sessionId;
-    if (!nextSession && stored) nextSession = stored;
-    if (!nextSession && target.kind === 'goal') nextSession = conversations.find(row => row.goalId === nextGoal && row.kind === 'chat')?.sessionId || null;
-    restoreWorkspace(nextSession || stored); setFocusResult(false); setChatExpanded(false); setDockOpen(!narrow);
-    navigate({ type: 'openObject', target, page: page || (target.kind === 'material' ? 'personal' : target.kind === 'goal' ? 'goals' : ['report', 'assessment', 'rewrite'].includes(target.kind) ? 'reports' : target.kind === 'interview' ? 'interviews' : 'home'), view: nextView, goalId: nextGoal, sessionId: nextSession });
-  }
-  const selectPage = page => { setMaterialId(null); setFocusResult(false); setChatExpanded(false); navigate({ type: 'deskPage', view: page }); };
-  const closeObject = () => { returnFocus.current = studio ? objectKey(studio.target) : null; setFocusResult(false); setChatExpanded(false); setMaterialId(null); navigate({ type: 'closeObject' }); };
-  const selectedPage = studio?.page || (DESK_PAGES.includes(view) ? view : goalId ? 'goals' : 'home');
-  const rows = collectionRows(state, selectedPage, nativeSessions.byId);
-  const visibleRows = filterCollection(rows, collections[selectedPage]);
-  const objectIndex = studio ? visibleRows.findIndex(row => objectKey(row) === objectKey(studio.target)) : -1;
-  const resultRow = studio && collectionRows(state, 'reports').find(row => row.kind === studio.target.kind && row.id === studio.target.id);
-  const objectTitle = studio?.target.kind === 'material' ? state.materials.find(row => row.id === studio.target.id)?.title : resultRow?.title || goal?.title || title;
-  const undoReceipt = receipt => run(() => action('receipt.undo', { receiptId: receipt.id }));
-  const newestUndo = (state.receipts || []).find(row => row.undo.available);
-  React.useEffect(() => {
-    const onKey = event => {
-      if (!rootRef.current?.contains(event.target) || modal) return;
-      const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName) || event.target.isContentEditable;
-      if (event.key === 'Escape' && context) { setContext(null); event.preventDefault(); }
-      else if (event.key === 'Escape' && narrow && dockOpen) { setDockOpen(false); event.preventDefault(); }
-      else if (event.key === 'Escape' && studio && !typing) { closeObject(); event.preventDefault(); }
-      else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey && !typing && newestUndo && !busy) { event.preventDefault(); void undoReceipt(newestUndo); }
-    };
-    const root = rootRef.current; root?.addEventListener('keydown', onKey); return () => root?.removeEventListener('keydown', onKey);
-  }, [studio, context, narrow, dockOpen, modal, newestUndo?.id, busy]);
+  const inRoom = Boolean(nav.room);
+  const showDock = nav.dock && (!inRoom || roomInterview?.mode === 'text');
+  const nativeChat = dockSession ? (sessionWorkspace ? <NativeChat key={dockSession} sessionId={dockSession} t={t} useResource={useResource} SessionProvider={SessionProvider} renderSlot={renderSlot}/>
+    : <p className="zj-hint zj-dock-note">{workspaceChoices.phase === 'ready' ? t('floatingConversation') : t('loading')}</p>) : null;
 
-  // A new user lands in the prepare flow; it and a running interview take the
-  // whole panel, without the workbench rail and bars around them.
-  const firstRun = snapshot.ready && !state.goals.length && !state.interviews.length;
-  const showPrepare = snapshot.ready && !studio && (view === 'prepare' || (view === 'home' && (firstRun || prepareHeld) && !prepareSkipped));
-  React.useEffect(() => { if (showPrepare && view === 'home' && !prepareHeld) setPrepareHeld(true); }, [showPrepare, view, prepareHeld]);
-  const inInterview = view === 'chat' && Boolean(interview) && !chatExpanded;
-  const immersive = showPrepare || inInterview;
-  const leavePrepare = () => { setPrepareSkipped(true); if (view === 'prepare') navigate({ type: 'deskPage', view: 'home' }); };
-  const startPrepared = input => {
-    if (!selectedWorkspace) { setError({ code: 'WORKSPACE_REQUIRED' }); return Promise.resolve(undefined); }
-    return run(() => startInterview({ ...input, workspaceId: selectedWorkspace.workspaceId }), result => {
-      saveDraft('prepare', undefined); setPrepareHeld(false); selectChat({ goalId: input.goalId, sessionId: result.sessionId });
-    });
-  };
-  const fullChat = (view === 'chat' && !interview && !studio) || chatExpanded;
-  const showDock = fullChat || (dockOpen && !focusResult && !(view === 'chat' && interview?.mode === 'realtime'));
-  return <TaskCancelContext.Provider value={{ canCancel: Boolean(snapshot.operation?.canCancel), cancel: () => cancelCurrent?.(snapshot.operation?.requestId) }}><div className={`zj${narrow ? ' zj-narrow' : ''}${immersive ? ' zj-immersive' : ''}`} ref={rootRef} data-zhijing-workbench=""><style>{css + deskCss + shellCss + flowCss + scoreCss + roomCss}</style>{!immersive && <aside className="zj-rail" aria-label={t('panel')}>
-    <div className="zj-brand"><Mark size={26}/><span>{t('panel')}</span></div>
-    <section><h2 className="zj-section-label">{t('goals')}<button title={t('newGoal')} aria-label={t('newGoal')} onClick={() => setModal({ kind: 'goal' })}>+</button></h2>
-      <div className="zj-goals">{state.goals.map(row => <div key={row.id}><button className={`zj-goal-name${goalId === row.id ? ' is-active' : ''}`} onClick={() => selectGoal(row.id)}><span>{row.title}</span></button>
-        {row.conversations.map(chat => <button className={`zj-chat-link${sessionId === chat.sessionId && view === 'chat' ? ' is-active' : ''}`} key={chat.id} onClick={() => selectChat({ ...chat, goalId: row.id })}><span>{conversationTitle(chat)}</span></button>)}
-      </div>)}</div>{!state.goals.length && <p className="zj-subtle" style={{ padding: '0 10px' }}>{t('noGoals')}</p>}
-    </section>
-    {conversations.some(row => !row.goalId) && <section><h2 className="zj-section-label">{t('ungrouped')}</h2>{conversations.filter(row => !row.goalId).map(row => <button key={row.id} className={`zj-chat-link${sessionId === row.sessionId ? ' is-active' : ''}`} onClick={() => selectChat(row)}><span>{conversationTitle(row)}</span></button>)}</section>}
-    <div className="zj-voice-setup"><Button small quiet onClick={openRealtimeSettings}>{t('realtimeSettings')}</Button><details><summary>{t('compatibleVoiceInput')}</summary><VoiceSetup t={t} enableVoiceInput={enableVoiceInput} openVoiceSettings={openVoiceSettings}/></details></div>
-  </aside>}<section className="zj-main">{immersive ? <header className="zj-slim"><div className="zj-brand"><Mark size={20}/><span>{t('panel')}</span></div>
-    <div className="zj-toolbar">{inInterview && interview.mode !== 'realtime' && <Button small quiet aria-expanded={showDock} onClick={() => setDockOpen(value => !value)}>{t(showDock ? 'hideAssistant' : 'showAssistant')}</Button>}
-      {inInterview && <Button small quiet onClick={() => navigate({ type: 'workspace' })}>{t('backToWorkbench')}</Button>}
-      {showPrepare && <Button small quiet onClick={leavePrepare}>{t('prepSkip')}</Button>}</div>
-  </header> : <><nav className="zj-desk-nav" aria-label={t('deskNavigation')}>{DESK_PAGES.map(page => <button key={page} type="button" aria-current={selectedPage === page ? 'page' : undefined} className={selectedPage === page ? 'is-active' : ''} onClick={() => selectPage(page)}>{t(PAGE_LABELS[page])}</button>)}</nav><header className="zj-topbar"><h1>{title}</h1>{goal?.company && <span className="zj-subtle">{goal.company}</span>}
-    <div className="zj-toolbar">{(view === 'chat' || chatExpanded) && <Button small quiet onClick={() => chatExpanded ? setChatExpanded(false) : navigate({ type: 'workspace' })}>{t('backToWorkbench')}</Button>}{!fullChat && !(view === 'chat' && interview?.mode === 'realtime') && <Button small quiet aria-expanded={showDock} onClick={() => setDockOpen(value => !value)}>{t(showDock ? 'hideAssistant' : 'showAssistant')}</Button>}<Button small quiet onClick={() => { setError(null); void refresh(); }}>{t('refresh')}</Button><Button small disabled={busy} onClick={() => newChat(goal?.id || null)}>{t('newChat')}</Button>{goal ? <Button small primary disabled={busy} onClick={openInterview}>{t('newInterview')}</Button> : <Button small primary onClick={() => navigate({ type: 'deskPage', view: 'prepare' })}>{t('prepOpen')}</Button>}</div>
-  </header>
-    <div className="zj-review-note"><label>{t('dshWorkspace')} <select ref={workspaceAnchor} value={selectedWorkspace?.workspaceId || ''} onChange={event => setWorkspaceId(event.target.value)}><option value="">{t('selectWorkspace')}</option>{workspaceChoices.items.map(row => <option key={row.workspaceId} value={row.workspaceId}>{row.title}</option>)}</select></label>{!selectedWorkspace && <span>{t('workspaceRequired')}</span>}
-      <Button small quiet onClick={() => run(async () => { if (!openWorkspaceManager?.()) throw new Error(t('unavailable')); })}>{t('manageWorkspaces')}</Button>
-    </div></>}
-    {(busy || snapshot.loading) && <div className="zj-progress" role="progressbar" aria-label={t('processing')}/>}
-    {!immersive && <TaskCard operation={snapshot.operation} onCancel={cancelCurrent} onRetry={() => run(() => retryCurrent?.())} onOpen={openObject} t={t}/>}
-    {currentError && <div className="zj-error" role="alert"><strong>{t('errorTitle')}</strong><span>{errors.has(currentError.code) ? t(`error_${currentError.code}`) : currentError.message || t('error_REQUEST_FAILED')}</span><Button quiet small onClick={() => { setError(null); void refresh(); }}>{t('retry')}</Button></div>}
-    {showPrepare ? <Prepare t={t} state={state} busy={busy} draft={drafts.prepare} onDraftChange={value => saveDraft('prepare', value)}
-      action={perform} task={operation => run(() => operation(action))} upload={(file, metadata) => run(() => upload(file, metadata))} startInterview={startPrepared}
-      workspaces={workspaceChoices.items} workspaceId={selectedWorkspace?.workspaceId || ''} onWorkspace={setWorkspaceId}
-      onManageWorkspaces={() => run(async () => { if (!openWorkspaceManager?.()) throw new Error(t('unavailable')); })}
-      realtimeApi={realtimeApi} openRealtimeSettings={openRealtimeSettings}/> : <>
-    {studio && <StudioHeader t={t} title={objectTitle} onBack={closeObject} previous={objectIndex > 0 ? visibleRows[objectIndex - 1] : null} next={objectIndex >= 0 ? visibleRows[objectIndex + 1] : null} onMove={row => openObject(row, selectedPage)} focus={focusResult} onFocus={() => { setFocusResult(value => !value); setDockOpen(true); }}/>}
-    <div className={`zj-stage${fullChat ? ' is-chat' : ''}${studio ? ' is-studio' : ''}${showDock ? ' has-assistant' : ''}`}><div className={`zj-workspace-page${fullChat ? ' is-hidden' : ''}`} aria-hidden={fullChat || undefined}>
-    {!snapshot.ready ? <div className="zj-body"><p className="zj-subtle">{t('loading')}</p></div> : !studio && DESK_PAGES.includes(view) ? <Collection key={view} page={view} rows={rows} value={collections[view]} onChange={patch => setCollections(values => ({ ...values, [view]: { ...values[view], ...patch } }))} onOpen={row => openObject(row, view)} onAddMaterial={() => addMaterial()} busy={busy} onStatusChange={(id, status) => perform('goal.update', { goalId: id, status })} onCreate={view === 'personal' ? () => addMaterial() : view === 'goals' ? () => setModal({ kind: 'goal' }) : view === 'home' ? () => newChat(null) : undefined} t={t}/> : view === 'result' ? <ResultStudio key={studio?.target.id} row={resultRow} state={state} t={t} busy={busy} onExport={exportFile} onEvidence={showEvidence} onAction={perform} onReviewVersion={reviewVersion} draft={drafts[`result:${studio?.target.id}`]} onDraftChange={value => saveDraft(`result:${studio?.target.id}`, value)}/> : view === 'personal' ? <Materials studio state={state} t={t} busy={busy} selectedId={materialId} selectedVersionId={materialVersionId} onSelect={id => { setMaterialId(id); setMaterialVersionId(null); }} onAdd={() => addMaterial()} onEdit={(material, version) => setModal({ kind: 'material', material, version })} onConfirm={confirmVersion} onExport={exportFile} onAssess={id => perform('assessment.run', { kind: 'resume', versionId: id })} onEvidence={showEvidence} onSource={id => run(() => readSource(id), data => setModal({ kind: 'source', data }))} onChatContext={askContext}/> : view === 'chat' && sessionId ? <>
-      {(conversation?.materialVersionIds || []).map(id => versionEntry(state, id)).filter(entry => entry?.material.kind === 'resume').map(({ material, version }) => <div className="zj-review-note" key={version.id}><span>{t('resume')} · {material.title} · {t('version', { number: version.revision })}</span><span>{t('chatSnapshot')}</span></div>)}
-      {interview ? <Interview key={interview.id} state={state} interview={interview} t={t} busy={busy || !sessionWorkspace} onAction={performInterview} onExport={exportFile} voiceApi={voiceApi} realtimeApi={realtimeApi} openRealtimeSettings={openRealtimeSettings} onChanged={refresh} nativeChat={null} onEvidence={showEvidence}
-        answerDraft={drafts[`answer:${interview.id}:${interview.currentQuestionId}`]} onAnswerDraftChange={value => saveDraft(`answer:${interview.id}:${interview.currentQuestionId}`, value)}/> : null}
-    </> : view === 'goal' && goal ? <div className="zj-body"><div className="zj-page-heading"><div><span className="zj-eyebrow">{t('goals')}</span><h2>{goal.title}</h2>{goal.description && <p>{goal.description}</p>}</div><div className="zj-actions"><Button small disabled={busy} onClick={() => setModal({ kind: 'editGoal', goal })}>{t('deskEditGoal')}</Button><Button small disabled={busy} onClick={() => perform('goal.update', { goalId: goal.id, status: goal.status === 'active' ? 'archived' : 'active' })}>{t(goal.status === 'active' ? 'deskArchive' : 'deskRestore')}</Button></div></div>
-      <Tabs values={['overview','review','fit','rewrite']} active={tab} onChange={setTab} t={t}/>
-      {tab === 'overview' ? <><div className="zj-form"><ResumeSelect state={state} value={versionId} onChange={setVersionId} t={t}/><p className="zj-subtle">{t('chatSnapshot')}</p></div><div className="zj-actions"><Button primary disabled={busy} onClick={() => newChat(goal.id)}>{t('newChat')}</Button><Button disabled={busy} onClick={openInterview}>{t('newInterview')}</Button></div>
-        <GoalMaterials state={state} goal={goal} t={t} onAdd={() => addMaterial('job', goal.id)} onLink={() => setModal({ kind: 'linkMaterial' })} onChatContext={askContext}/>
-        {goal.conversations.length > 0 && <section className="zj-card"><h3>{t('chat')}</h3>{goal.conversations.map(row => <div className="zj-attach" key={row.id}><div><strong>{conversationTitle(row)}</strong><span className="zj-subtle">{t(row.kind === 'interview' ? 'interview' : 'chat')}</span></div><Button small onClick={() => selectChat({ ...row, goalId: goal.id })}>{t('start')}</Button></div>)}</section>}
-      </> : <Analysis state={state} goal={goal} tab={tab} t={t} busy={busy} onAction={perform} onExport={exportFile} selectedVersion={versionId} onSelectVersion={setVersionId} onReviewVersion={reviewVersion} onEvidence={showEvidence} onChatContext={askContext}
-        draft={drafts[`analysis:${goal.id}:${versionId}:${tab}`]} onDraftChange={value => saveDraft(`analysis:${goal.id}:${versionId}:${tab}`, value)}/>}
-    </div> : <div className="zj-body"><div className="zj-empty"><span className="zj-eyebrow">{t('tagline')}</span><h2>{t('homeTitle')}</h2><p>{t('homeNote')}</p><div className="zj-actions"><Button primary disabled={busy} onClick={() => newChat(null)}>{t('newChat')}</Button><Button onClick={() => setModal({ kind: 'goal' })}>{t('newGoal')}</Button><Button quiet onClick={() => addMaterial()}>{t('addMaterial')}</Button></div></div></div>}
-  </div><aside className={`zj-assistant${showDock ? '' : ' is-hidden'}`} aria-label={t('assistant')} aria-hidden={!showDock || undefined}>
-    <header className="zj-assistant-head"><div><strong>{t('assistant')}</strong><span className="zj-subtle">{conversation ? conversationTitle(conversation) : t('noConversations')}</span></div><div className="zj-actions">
-      {!fullChat && sessionId && <Button small quiet onClick={() => studio ? setChatExpanded(true) : selectChat(conversation || { sessionId, goalId })}>{t('expandChat')}</Button>}
-      {!fullChat && <Button small quiet onClick={() => setDockOpen(false)}>{t('hideAssistant')}</Button>}
-    </div></header>
-    {conversation && <div className="zj-assistant-context"><span>{conversation.goalId ? state.goals.find(row => row.id === conversation.goalId)?.title || t('goals') : t('ungrouped')}</span>
-      <span>{(conversation.materialVersionIds || []).map(id => versionEntry(state, id)).filter(Boolean).map(({ material, version }) => `${material.title} · ${t('version', { number: version.revision })}`).join(' / ')}</span></div>}
-    {conversation && !conversation.goalId && state.goals.length > 0 && <div className="zj-assistant-context"><Button small onClick={() => setModal({ kind: 'bindConversation' })}>{t('bindConversation')}</Button></div>}
-    {context && context.sessionId === sessionId && <section className="zj-context-preview" aria-label={t('selectedContext')}><div className="zj-page-heading"><strong>{context.title} · {t('version', { number: context.revision })}</strong><Button small quiet disabled={busy} onClick={() => setContext(null)}>{t('cancelContext')}</Button></div><details><summary>{t('previewContext')}</summary><pre>{context.text}</pre></details><p className="zj-subtle">{t('contextPreviewNote')}</p><Button small primary disabled={busy} onClick={addContextDraft}>{t('addToChatDraft')}</Button></section>}
-    <ReceiptList receipts={state.receipts} onOpen={openObject} onUndo={undoReceipt} busy={busy} t={t}/>
-    {newestUndo && <div className="zj-receipt-undo"><Button small quiet disabled={busy} title={t('deskUndoNote')} onClick={() => undoReceipt(newestUndo)}>{t('deskUndoLast')}</Button></div>}
-    {contextNotice && <p className="zj-context-notice" role="status">{contextNotice}</p>}
-    {!interview && <div className="zj-suggestions">{['deskSuggestReview', 'deskSuggestPrepare'].map(key => <Button small quiet key={key} disabled={busy} onClick={() => prepareSuggestion(key)}>{t(key)}</Button>)}</div>}
-    {nativeChat || <div className="zj-assistant-empty"><p>{t('assistantEmpty')}</p><Button primary disabled={busy} onClick={() => newChat(goal?.id || null)}>{t('newChat')}</Button></div>}
-  </aside></div></>}</section>
-    {modal?.kind === 'goal' && <GoalForm t={t} busy={busy} saving={localPending > 0} draft={drafts.goal} onDraftChange={value => saveDraft('goal', value)} onClose={() => setModal(null)} onSave={input => run(() => action('goal.create', input), value => { saveDraft('goal', undefined); if (currentModal.current === modal) { setModal(null); selectGoal(value.id); } })}/>}
-    {modal?.kind === 'editGoal' && <GoalForm t={t} busy={busy} saving={localPending > 0} editing draft={drafts[`goal:${modal.goal.id}`] || modal.goal} onDraftChange={value => saveDraft(`goal:${modal.goal.id}`, value)} onClose={() => setModal(null)} onSave={input => run(() => action('goal.update', { goalId: modal.goal.id, ...input }), () => { saveDraft(`goal:${modal.goal.id}`, undefined); setModal(null); })}/>}
-    {modal?.kind === 'material' && <MaterialForm key={materialDraftKey(modal)} t={t} busy={busy} saving={localPending > 0} {...modal} draft={drafts[materialDraftKey(modal)]} onDraftChange={value => saveDraft(materialDraftKey(modal), value)} onClose={() => setModal(null)} onSave={(name, input) => run(() => action(name, input), materialSaved)} onUpload={(file, metadata) => run(() => upload(file, metadata), materialSaved)}/>}
-    {modal?.kind === 'linkMaterial' && goal && <MaterialPicker t={t} state={state} busy={busy} onClose={() => setModal(null)} onSelect={id => run(() => action('goal.linkMaterial', { goalId: goal.id, versionId: id }), () => setModal(null))}/>}
-    {modal?.kind === 'interview' && goal && <InterviewForm key={goal.id} t={t} state={state} goal={goal} busy={busy} saving={localPending > 0} selectedVersion={versionId}
-      draft={drafts[`interview:${goal.id}`]} onDraftChange={value => { saveDraft(`interview:${goal.id}`, value); setVersionId(value.versionId); }}
-      onClose={() => setModal(null)} onStart={input => run(() => startInterview({ ...input, workspaceId: selectedWorkspace?.workspaceId }), result => {
-        saveDraft(`interview:${goal.id}`, undefined); if (currentModal.current === modal) { setModal(null); selectChat({ goalId: goal.id, sessionId: result.sessionId }); }
-      })}/>}
-    {modal?.kind === 'citation' && <Modal title={source?.title || t('evidence')} t={t} onClose={() => setModal(null)}>{source ? <>{source.revision && <p className="zj-subtle">{t('version', { number: source.revision })}</p>}<div className="zj-paper-content">{segments.before}{segments.quote && <mark>{segments.quote}</mark>}{segments.after}</div></> : <p className="zj-subtle">{t('unavailable')}</p>}</Modal>}
-    {modal?.kind === 'source' && <SourceDialog key={modal.data.versionId} data={modal.data} t={t} onClose={() => setModal(null)} loadOriginal={loadOriginal} onDownload={id => run(() => downloadOriginal(id))}/>}
-    {modal?.kind === 'bindConversation' && conversation && <Modal title={t('bindConversation')} t={t} onClose={() => setModal(null)}>{state.goals.map(row => <div className="zj-attach" key={row.id}><strong>{row.title}</strong><Button small disabled={busy} onClick={() => run(() => action('conversation.link', { goalId: row.id, sessionId: conversation.sessionId, title: conversation.title, kind: conversation.kind }), () => { selectChat({ ...conversation, goalId: row.id }); setModal(null); })}>{t('link')}</Button></div>)}</Modal>}
-  </div></TaskCancelContext.Provider>;
+  const topbar = <header className="zj-top">
+    <span className="zj-wordmark"><Mark size={18}/><span>{t('panel')}</span></span>
+    {inRoom ? <div className="zj-top-space"/> : <><nav className="zj-tabs-nav" aria-label={t('navLabel')}>{DESK_PAGES.map(page => <button type="button" key={page} aria-current={nav.page === page ? 'page' : undefined}
+      className={nav.page === page ? 'is-on' : ''} onClick={() => navigate({ type: 'page', page })}>{t(PAGE_LABELS[page])}</button>)}</nav><div className="zj-top-space"/></>}
+    <button type="button" className={`zj-chip${voice.ready ? ' is-ok' : ''}`} title={t('voiceChipTitle')} onClick={openSettings}><span className="zj-dot" aria-hidden="true"/>
+      {t(voice.ready ? 'voiceChipReady' : voice.checking && !voice.catalog ? 'voiceChipChecking' : 'voiceChipNone')}</button>
+    <button type="button" className="zj-icon-btn is-glass" aria-label={t('openSettings')} title={t('openSettings')} onClick={openSettings}><Gear/></button>
+    {(!inRoom || roomInterview?.mode === 'text') && <button type="button" className="zj-chip" aria-pressed={showDock} onClick={() => navigate({ type: 'dock' })}><Bubble/>{t('assistantToggle')}</button>}
+    {inRoom && <Button small onClick={leaveRoom} title={t('roomBackTitle')}>{t('roomBack')}</Button>}
+  </header>;
+
+  let page;
+  if (!snapshot.ready) page = <div className="zj-page"><p className="zj-hint">{t('loading')}</p></div>;
+  else if (inRoom) page = roomInterview ? <Interview key={roomInterview.id} state={state} interview={roomInterview} t={t} busy={busy} onAction={performInterview} onExport={exportFile} voiceApi={voiceApi} realtimeApi={realtimeApi}
+    openRealtimeSettings={openSettings} onChanged={refresh} nativeChat={null} onEvidence={showEvidence}
+    answerDraft={drafts[`answer:${roomInterview.id}:${roomInterview.currentQuestionId}`]} onAnswerDraftChange={value => saveDraft(`answer:${roomInterview.id}:${roomInterview.currentQuestionId}`, value)}/>
+    : <div className="zj-page"><p className="zj-hint" role="status">{t('interviewWaiting')}</p></div>;
+  else if (nav.page === 'review') page = <ReviewPage t={t} state={state} nativeTitles={nativeSessions.byId} open={nav.open} onOpen={target => navigate({ type: 'open', target })} onClose={() => navigate({ type: 'close' })}
+    onEnterRoom={enterRoom} busy={busy} onExport={exportFile} onEvidence={showEvidence} onAction={perform} onReviewVersion={reviewVersion} drafts={drafts} onDraft={saveDraft}/>;
+  else if (nav.page === 'library') page = <LibraryPage t={t} state={state} open={nav.open} onOpen={target => navigate({ type: 'open', target })} onClose={() => navigate({ type: 'close' })} busy={busy}
+    onAddMaterial={addMaterial} onEditMaterial={(material, version) => setModal({ kind: 'material', material, version })} onConfirm={confirmVersion} onExport={exportFile}
+    onAssess={id => perform('assessment.run', { kind: 'resume', versionId: id })} onEvidence={showEvidence} onSource={id => run(() => readSource(id), data => setModal({ kind: 'source', data }))}
+    onChatContext={askContext} onAction={perform} onReviewVersion={reviewVersion} onEditGoal={goal => setModal({ kind: 'editGoal', goal })} onLinkMaterial={goal => setModal({ kind: 'linkMaterial', goalId: goal.id })}
+    onUseRole={useRole} drafts={drafts} onDraft={saveDraft}/>;
+  else page = <Prepare t={t} state={state} busy={busy} draft={prepareDraft} onDraftChange={value => saveDraft('prepare', value)}
+    action={perform} task={operation => run(() => operation(action))} upload={(file, metadata) => run(() => upload(file, metadata))} startInterview={startPrepared}
+    unfinished={unfinished} onContinue={enterRoom}
+    sheet={nav.sheet} onSheet={sheet => navigate({ type: 'sheet', sheet })} voiceReady={voice.ready} voiceChecking={voice.checking} workspaceReady={Boolean(selectedWorkspace)} onOpenSettings={openSettings}/>;
+
+  return <TaskCancelContext.Provider value={{ canCancel: Boolean(snapshot.operation?.canCancel), cancel: () => cancelCurrent?.(snapshot.operation?.requestId) }}>
+    <div className={`zj zj-desk${narrow ? ' zj-narrow' : ''}${inRoom ? ' is-room' : ''}`} ref={rootRef} data-zhijing-workbench="" data-screen={inRoom ? 'room' : nav.page}>
+      <style>{css + deskCss + shellCss + flowCss + scoreCss + roomCss + desk10Css}</style>
+      <div className="zj-ambient" aria-hidden="true"><i/><i/><i/></div>
+      <section className="zj-main">
+        {topbar}
+        {(busy || snapshot.loading) && <div className="zj-progress" role="progressbar" aria-label={t('processing')}/>}
+        {!inRoom && snapshot.operation?.status !== 'succeeded' && <TaskCard operation={snapshot.operation} onCancel={cancelCurrent} onRetry={() => run(() => retryCurrent?.())} onOpen={openTarget} t={t}/>}
+        {currentError && <div className="zj-error" role="alert"><strong>{t('errorTitle')}</strong><span>{ERRORS.has(currentError.code) ? t(`error_${currentError.code}`) : currentError.message || t('error_REQUEST_FAILED')}</span>
+          <Button quiet small onClick={() => { setError(null); void refresh(); }}>{t('retry')}</Button></div>}
+        <div className={`zj-scroll${inRoom ? ' is-room' : ''}`} key={inRoom ? `room:${nav.room}` : nav.page}>{page}</div>
+      </section>
+      {showDock && <aside className="zj-dock" aria-label={t('assistant')}>
+        <header className="zj-dock-head"><strong>{t('assistant')}</strong><span className="zj-hint">{t('assistantSame')}</span><div className="zj-top-space"/>
+          <button type="button" className="zj-icon-btn" aria-label={t('hideAssistant')} onClick={() => navigate({ type: 'dock', open: false })}><Close/></button></header>
+        {!inRoom && <div className="zj-dock-bar">{chats.length > 1 && <select className="zj-input is-small" aria-label={t('assistantPick')} value={dockSession || ''} onChange={event => { restoreWorkspace(event.target.value); navigate({ type: 'session', sessionId: event.target.value }); }}>
+          {chats.map(row => <option key={row.sessionId} value={row.sessionId}>{conversationTitle(row)}</option>)}</select>}
+          {chats.length === 1 && dockConversation && <span className="zj-hint">{conversationTitle(dockConversation)}</span>}
+          {chats.length > 0 && <Button small quiet disabled={busy} onClick={() => newChat(prepareDraft?.goalId)}>{t('newChat')}</Button>}</div>}
+        {context && context.sessionId === dockSession && <section className="zj-context-preview" aria-label={t('selectedContext')}><div className="zj-page-heading"><strong>{context.title} · {t('version', { number: context.revision })}</strong>
+          <Button small quiet disabled={busy} onClick={() => setContext(null)}>{t('cancelContext')}</Button></div><details><summary>{t('previewContext')}</summary><pre>{context.text}</pre></details>
+          <p className="zj-hint">{t('contextPreviewNote')}</p><Button small primary disabled={busy} onClick={addContextDraft}>{t('addToChatDraft')}</Button></section>}
+        {contextNotice && <p className="zj-context-notice" role="status">{contextNotice}</p>}
+        {!inRoom && <ReceiptList receipts={state.receipts} onOpen={openTarget} onUndo={undoReceipt} busy={busy} t={t}/>}
+        <div className="zj-dock-chat">{nativeChat || <div className="zj-assistant-empty"><p>{t('assistantEmpty')}</p><Button primary disabled={busy} onClick={() => newChat(prepareDraft?.goalId)}>{t('newChat')}</Button></div>}</div>
+        {!inRoom && <div className="zj-suggestions">{['deskSuggestReview', 'deskSuggestPrepare'].map(key => <Button small quiet key={key} disabled={busy} onClick={() => prepareSuggestion(key)}>{t(key)}</Button>)}</div>}
+      </aside>}
+
+      {nav.settings && <SettingsDialog t={t} onClose={() => navigate({ type: 'settings', open: false })} onSaved={options => { void voice.check(); if (!options?.quiet) say(t('setSaved')); }}
+        voiceReady={voice.ready} useRealtimeSettings={useRealtimeSettings} {...settingsActions}
+        workspaces={workspaceChoices.items} workspaceId={selectedWorkspace?.workspaceId || ''} onWorkspace={id => { setWorkspaceId(id); setError(null); }} onManageWorkspaces={manageWorkspaces}
+        enableVoiceInput={enableVoiceInput} openVoiceSettings={openVoiceSettings}/>}
+      {toast && <div className="zj-toast" role="status" key={toast.key}><span>{toast.text}</span>
+        {toast.receipt && <button type="button" disabled={busy} onClick={() => { const receipt = toast.receipt; setToast(null); void undoReceipt(receipt); }}>{t('deskUndo')}</button>}</div>}
+
+      {modal?.kind === 'editGoal' && <GoalForm t={t} busy={busy} saving={localPending > 0} editing draft={drafts[`goal:${modal.goal.id}`] || modal.goal} onDraftChange={value => saveDraft(`goal:${modal.goal.id}`, value)}
+        onClose={() => setModal(null)} onSave={input => run(() => action('goal.update', { goalId: modal.goal.id, ...input }), () => { saveDraft(`goal:${modal.goal.id}`, undefined); setModal(null); })}/>}
+      {modal?.kind === 'material' && <MaterialForm key={materialKey(modal)} t={t} busy={busy} saving={localPending > 0} {...modal} draft={drafts[materialKey(modal)]} onDraftChange={value => saveDraft(materialKey(modal), value)}
+        onClose={() => setModal(null)} onSave={(name, input) => run(() => action(name, input), materialSaved)} onUpload={(file, metadata) => run(() => upload(file, metadata), materialSaved)}/>}
+      {modal?.kind === 'linkMaterial' && linkGoal && <MaterialPicker t={t} state={state} busy={busy} onClose={() => setModal(null)} onSelect={id => run(() => action('goal.linkMaterial', { goalId: linkGoal.id, versionId: id }), () => setModal(null))}/>}
+      {modal?.kind === 'citation' && <Modal title={source?.title || t('evidence')} t={t} onClose={() => setModal(null)}>{source ? <>{source.revision && <p className="zj-subtle">{t('version', { number: source.revision })}</p>}
+        <div className="zj-paper-content">{segments.before}{segments.quote && <mark>{segments.quote}</mark>}{segments.after}</div></> : <p className="zj-subtle">{t('unavailable')}</p>}</Modal>}
+      {modal?.kind === 'source' && <SourceDialog key={modal.data.versionId} data={modal.data} t={t} onClose={() => setModal(null)} loadOriginal={loadOriginal} onDownload={id => run(() => downloadOriginal(id))}/>}
+    </div>
+  </TaskCancelContext.Provider>;
 }
+
+export function materialKey(modal) {
+  return modal?.material ? `material:${modal.material.id}:${modal.version?.id || ''}` : `material:new:${modal?.goalId || ''}:${modal?.initialKind || 'resume'}`;
+}
+export const materialDraftKey = materialKey;

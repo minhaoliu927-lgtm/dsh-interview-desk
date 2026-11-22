@@ -14,7 +14,7 @@ export function Materials({ state, t, busy, onAdd, onEdit, onConfirm, onExport, 
   const version = material?.versions.find(row => row.id === chosenVersion) || material?.versions.find(row => row.id === material.latestVersionId) || material?.versions.at(-1);
   const passage = selectedResumePassage(version, selection);
   const rememberSelection = event => setSelection({ versionId: version.id, value: event.currentTarget.value, start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd });
-  return <div className="zj-body"><div className="zj-page-heading"><div><h2>{t('personal')}</h2><p>{t('personalNote')}</p></div><Button primary onClick={onAdd}>{t('addMaterial')}</Button></div>
+  return <div className="zj-body">{!studio && <div className="zj-page-heading"><div><h2>{t('personal')}</h2><p>{t('personalNote')}</p></div><Button primary onClick={onAdd}>{t('addMaterial')}</Button></div>}
     {!material ? <div className="zj-empty"><h2>{t('noMaterials')}</h2><p>{t('noMaterialsNote')}</p><Button onClick={onAdd}>{t('addMaterial')}</Button></div> : <div className={studio ? 'zj-material-studio' : 'zj-split'}>
       {!studio && <div className="zj-material-list">{state.materials.map(row => <button key={row.id} className={`zj-material-item${row.id === material.id ? ' is-active' : ''}`} onClick={() => { onSelect(row.id); setChosenVersion(null); }}>
         <span className="zj-subtle">{t(row.kind === 'company' ? 'companyMaterial' : row.kind)}</span><strong>{row.title}</strong><span className="zj-subtle">{t('version', { number: row.versions.length })}</span>

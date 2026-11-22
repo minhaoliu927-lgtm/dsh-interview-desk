@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
   "name": "dsh-interview-desk",
-  "version": "0.1.0-dev.9",
+  "version": "0.1.0-dev.10",
   "license": "MIT",
-  "inventorySha256": "3fc319bfb0553b16070da95fa678d3787a3624b159fca755f576e432913e48e9",
+  "inventorySha256": "4ba45eb5bb635621c32dbc87a0db2a3665780b140980073c8bae1347abe267ee",
   "files": [
     {
       "path": ".gitignore",
@@ -62,8 +62,13 @@
     },
     {
       "path": "client/components.jsx",
-      "bytes": 10185,
-      "sha256": "04bcea90be11af9e7efd6d2a5f046936a393cd1c1bffe41f8719d67823e1e62e"
+      "bytes": 13167,
+      "sha256": "bd956945975178e25f0b8a79a54a6cfcc29619147b0614098d970e45427252aa"
+    },
+    {
+      "path": "client/css/desk.css",
+      "bytes": 21433,
+      "sha256": "c4def33d14dbe5074cf4bf1b8ff742c342894243267274ab02aa0684d0245f77"
     },
     {
       "path": "client/css/flow.css",
@@ -96,19 +101,24 @@
       "sha256": "0d2e905ba0e00ccd9d1b223f9fb692c7f190f5d647a46d1f7caf04b4364e52e0"
     },
     {
+      "path": "client/desk-nav.js",
+      "bytes": 2360,
+      "sha256": "1020d790007df54168896d32cfb50392159bd4c05043a3d4a2e61728390d2bf2"
+    },
+    {
       "path": "client/desk-styles.css",
       "bytes": 7234,
       "sha256": "82d6a90babbcd921c0e75e0ddd71be50e3529175439aac2660ebd6cf070a0a3d"
     },
     {
       "path": "client/desk-views.jsx",
-      "bytes": 9603,
-      "sha256": "94199c917019d0b8fa9fbf36a4b8737b7af3ca27e7ed5d0d290f5b3107f90435"
+      "bytes": 9610,
+      "sha256": "2e33c9ee58a4a591c8212fcb2b254e01c7638531737ef03abb90e9a8bedf7cb6"
     },
     {
       "path": "client/index.jsx",
-      "bytes": 5804,
-      "sha256": "e81369f8e90f6cfc908e8ffab5fca68bc5812a963e37f12e96ddcce4540af1ff"
+      "bytes": 6684,
+      "sha256": "62138fba414a8b99fafa3b9d110f48c78cf7246a90146f53c94b91280a58048f"
     },
     {
       "path": "client/interview.jsx",
@@ -116,9 +126,14 @@
       "sha256": "e7f5e0dc35f245d4236a1b4cd19a539392f13d76a980ef5de627cb36761cb61e"
     },
     {
+      "path": "client/library-page.jsx",
+      "bytes": 6621,
+      "sha256": "6fc0a91a82f1f806fba97116c839116b3a01367d53ec537e3d6b53e12996f4db"
+    },
+    {
       "path": "client/materials.jsx",
-      "bytes": 6286,
-      "sha256": "3f8c100ef5b0d75a14772fbc9e3be5f1909f27a29c4d386b5932ba32a7ad48dc"
+      "bytes": 6299,
+      "sha256": "54a79784d429ec52b5afedbf2974be0bb458bc09d6f6bd4b6bee7bef6778e1b4"
     },
     {
       "path": "client/model.js",
@@ -137,18 +152,23 @@
     },
     {
       "path": "client/prepare-score.jsx",
-      "bytes": 9380,
-      "sha256": "3e961463f320cef04dae5e14811e13b088e70f4c83cb912cdafcdc8786becd5b"
+      "bytes": 9206,
+      "sha256": "5c6e3920e6e05809d4557e25608e916931e969febcb41ff2262936323caf9c44"
     },
     {
       "path": "client/prepare.jsx",
-      "bytes": 25074,
-      "sha256": "0dd51611cbd5db0b7d0c35205424b42f96d800d799f3219416494fe6482bdb69"
+      "bytes": 25612,
+      "sha256": "7bc858f3bfea3fd726577f19b97a4f4d0a86b31e5b865e188494cc1b639f75dd"
     },
     {
       "path": "client/realtime-settings.jsx",
       "bytes": 19198,
       "sha256": "e9f1ac452dc724923b719f5864588668ca7115555695fa0c35815a55cfb49244"
+    },
+    {
+      "path": "client/review-page.jsx",
+      "bytes": 4512,
+      "sha256": "b10889600c8c822684a32113538718911ae9cf564cde06f047ffb1aa576e970f"
     },
     {
       "path": "client/score.js",
@@ -159,6 +179,11 @@
       "path": "client/session.js",
       "bytes": 1405,
       "sha256": "a4f75fe8611d0103e63548e5c14ae8539392d9bf4d1b2fe0f1b06b2b928b1244"
+    },
+    {
+      "path": "client/settings-dialog.jsx",
+      "bytes": 12836,
+      "sha256": "bc797b06793cd7535b5b89646b1f9571d7c6a1b06d2add319a4ef913372d1d11"
     },
     {
       "path": "client/sidebar-integration.jsx",
@@ -177,8 +202,8 @@
     },
     {
       "path": "client/task-card.jsx",
-      "bytes": 2553,
-      "sha256": "e76b86e433c6edac4cf4eee9d613fef1ea670df2bb734e54dc9c1c3c7b008eed"
+      "bytes": 2627,
+      "sha256": "aa973e3542bdf7a7870ead3c8e3280ff91a0f71723d27897996c3be2140d9945"
     },
     {
       "path": "client/voice-ui.jsx",
@@ -222,8 +247,8 @@
     },
     {
       "path": "client/workbench.jsx",
-      "bytes": 39079,
-      "sha256": "d9a7dc3f49e871784fa9e713a2805fbd7700fe85207e0f4130b88e7b9d8d43ff"
+      "bytes": 27170,
+      "sha256": "84e1034ffe5d57b6b4c1301f2c6142bfbd385376714fa4e29dd637dfd3e8bf78"
     },
     {
       "path": "cordis.patch.yml",
@@ -246,9 +271,14 @@
       "sha256": "ed35a9c9c892cfddd50ace58a981311144dd14792d3f40c7058babd0d138b061"
     },
     {
+      "path": "locale/desk10.js",
+      "bytes": 9864,
+      "sha256": "c639144fec4938bad572b8b6629dd1c54ae8d78c40e4b3aacca08a118d7cf5f7"
+    },
+    {
       "path": "locale/dictionaries.js",
-      "bytes": 36653,
-      "sha256": "8ba09aa485896cc45da6a1869e6c4df2c694df7f6601b50dbc907d1128878c0a"
+      "bytes": 36733,
+      "sha256": "8a40a8fd21420c6af6bfff68b22f38c0e9f8382551f1d572280b84a70375e3c1"
     },
     {
       "path": "locale/en.json",
@@ -267,8 +297,8 @@
     },
     {
       "path": "package.json",
-      "bytes": 1887,
-      "sha256": "b8723015025b08409a87721bcc4cab89c6955b18aacca53fb8013767e752197a"
+      "bytes": 1888,
+      "sha256": "1bb024e2c2c33867183b98bc8e4826f261d107959bc4cfaaf0c6f916d28f1222"
     },
     {
       "path": "pnpm-lock.yaml",
@@ -307,13 +337,13 @@
     },
     {
       "path": "scripts/preview/fake-host.js",
-      "bytes": 12907,
-      "sha256": "583c1cca83ddfd61990e9e746e60530a9fa4063f94ede76f50a9482c40a41547"
+      "bytes": 15586,
+      "sha256": "c2c8f4b5b0520eb63ea03cf8f84dbabe719c11b06d70e78087b59cdd2dd748cb"
     },
     {
       "path": "scripts/preview/main.jsx",
-      "bytes": 2581,
-      "sha256": "7f84492f5a3e4b474950232514947c441046f7bf1f9b51a17d4adeda951873c0"
+      "bytes": 3397,
+      "sha256": "f853c9f7a1e6f9903e96f1fccfa4eae0c88a91aa3caf05ffb83d01a10c1b5267"
     },
     {
       "path": "scripts/setup-and-test.sh",
@@ -587,13 +617,13 @@
     },
     {
       "path": "test/client-navigation.test.js",
-      "bytes": 10297,
-      "sha256": "ff9bd1759b184417af90dafa98447bfb46696f57b029402e659b036746575f96"
+      "bytes": 8099,
+      "sha256": "55d0ae9f3deb6f13b63b8f3ea91fccc8e96a5f91847475f633ba713cd3d121d9"
     },
     {
       "path": "test/client-render.test.js",
-      "bytes": 11867,
-      "sha256": "6c339f5be72c21a7aab4e967f98777b8d4ecf829ffd98dc8a70e078ed4861b32"
+      "bytes": 14317,
+      "sha256": "13a8b825f3fedcb3b12f398f59fd76d9b0b76dd48f8772741879d44edc20703a"
     },
     {
       "path": "test/desk-collections.test.js",
@@ -652,8 +682,8 @@
     },
     {
       "path": "test/prepare.test.js",
-      "bytes": 9070,
-      "sha256": "0fbd03dbacdf79afba4b10b7c880acf7f54c1b627eea3b30f95f4ffb6565b068"
+      "bytes": 12195,
+      "sha256": "e3347b9653991694d4c6004f66b1366d4ef27def1cf4bd64d1a3db6a4116b928"
     },
     {
       "path": "test/realtime-call-ui.test.js",
@@ -704,6 +734,11 @@
       "path": "test/receipts.test.js",
       "bytes": 8607,
       "sha256": "e4915cda6bc8fd7678da6e59b7d057da5e37a3a9b6b73f942e9e6a51fb5873c9"
+    },
+    {
+      "path": "test/settings-dialog.test.js",
+      "bytes": 7467,
+      "sha256": "1654031a87d66f78d9f377aea779c327e14a551c79d06af06ecfe01ad5f6c3be"
     },
     {
       "path": "test/sidebar-integration.test.js",

@@ -26,8 +26,9 @@ const assessment = (kind, total, { goalId = 'g', versionId = 'r', jobVersionId =
   criteria: [{ id: kind === 'fit' ? 'skills' : 'evidence', name: kind, weight: 100, rating: total === null ? null : 3, score: total, reason: 'why', evidence: [] }] });
 const scored = (fit, resume, extra = {}) => ({ ...state(material('j', 'job', true), material('r', 'resume', true, 'CV.pdf')),
   goals: [goal('g', 'j')], assessments: [assessment('fit', fit, extra), assessment('resume', resume, extra)] });
-const render = (current, draft) => renderToStaticMarkup(React.createElement(prepare.Prepare, { t, state: current, draft: { role: 'Data analyst', jobVersionId: 'j', resumeVersionId: 'r', ...draft },
-  action: async () => undefined, upload: async () => undefined, startInterview: async () => undefined, workspaceId: 'ws' }));
+const render = (current, draft, extra = {}) => renderToStaticMarkup(React.createElement(prepare.Prepare, { t, state: current, draft: { role: 'Data analyst', jobVersionId: 'j', resumeVersionId: 'r', ...draft },
+  action: async () => undefined, upload: async () => undefined, startInterview: async () => undefined, voiceReady: true, workspaceReady: true, ...extra }));
+const startDisabled = html => /<button type="button" class="zj-btn primary" disabled="">Start the interview<\/button>/.test(html);
 const score = await compile('client/score.js');
 
 test('progress follows saved and confirmed versions, not button presses', () => {
@@ -49,18 +50,47 @@ test('voice stays the default way to interview', () => {
   assert.equal(prepare.PREPARE_DEFAULTS.questionCount, 5);
 });
 
-test('the start bar offers voice, text, counts and language once the resume scores 80', () => {
+test('the start card offers voice, text, counts and language once the resume scores 80', () => {
   const html = render(scored(90, 70));
-  for (const key of ['realtimeCall', 'textInterview', 'zhLanguage', 'enLanguage', 'prepStart']) assert.ok(html.includes(en[key]), key);
-  assert.ok(html.includes('aria-pressed="true">' + en.realtimeCall));
+  for (const key of ['realtimeCall', 'textInterview', 'zhLanguage', 'enLanguage', 'prepStart', 'deskHeadReady']) assert.ok(html.includes(en[key]), key);
+  assert.ok(html.includes('aria-pressed="true" class="is-on">' + en.realtimeCall));
   assert.ok(html.includes('Data analyst')); assert.ok(html.includes('CV.pdf'));
+  assert.equal(startDisabled(html), false);
   assert.equal(html.includes(en.prepNotReady), false);
 });
 
-test('an unconfirmed upload asks for review before the flow moves on', () => {
-  const html = renderToStaticMarkup(React.createElement(prepare.Prepare, { t, state: state(material('r', 'resume', false, 'CV.pdf')), draft: { resumeVersionId: 'r' },
-    action: async () => undefined, upload: async () => undefined, startInterview: async () => undefined }));
-  assert.ok(html.includes(en.prepReviewNote)); assert.ok(html.includes(en.prepConfirmThis)); assert.ok(html.includes(en.prepNotReady));
+test('an unconfirmed upload asks for review in its sheet before the page moves on', () => {
+  const props = { t, state: state(material('r', 'resume', false, 'CV.pdf')), draft: { resumeVersionId: 'r' },
+    action: async () => undefined, upload: async () => undefined, startInterview: async () => undefined };
+  const page = renderToStaticMarkup(React.createElement(prepare.Prepare, props));
+  assert.ok(page.includes(en.prepNotReady)); assert.ok(page.includes(en.deskConfirmIt)); assert.equal(page.includes(en.prepReviewNote), false);
+  const sheet = renderToStaticMarkup(React.createElement(prepare.Prepare, { ...props, sheet: 'resume' }));
+  assert.ok(sheet.includes(en.prepReviewNote)); assert.ok(sheet.includes(en.prepConfirmThis)); assert.ok(sheet.includes('role="dialog"'));
+});
+
+test('the start button names one reason at a time: materials, score, voice, then workspace', () => {
+  const below = prepare.prepareProgress(scored(70, 70), { role: 'R', jobVersionId: 'j', resumeVersionId: 'r' });
+  const passed = prepare.prepareProgress(scored(90, 90), { role: 'R', jobVersionId: 'j', resumeVersionId: 'r' });
+  const text = prepare.prepareProgress(scored(90, 90), { role: 'R', jobVersionId: 'j', resumeVersionId: 'r', mode: 'text' });
+  assert.equal(prepare.startBlock(prepare.prepareProgress(state(), {})), 'prep');
+  assert.equal(prepare.startBlock(below, { voiceReady: true, workspaceReady: true }), 'score');
+  assert.equal(prepare.startBlock(passed, { voiceReady: false, workspaceReady: true }), 'voice');
+  assert.equal(prepare.startBlock(text, { voiceReady: false, workspaceReady: true }), null);
+  assert.equal(prepare.startBlock(passed, { voiceReady: true, workspaceReady: false }), 'workspace');
+  assert.equal(prepare.startBlock(passed, { voiceReady: true, workspaceReady: true }), null);
+  const html = render(scored(90, 90), {}, { voiceReady: false });
+  assert.ok(html.includes(en.deskBlockedVoice)); assert.ok(html.includes(en.deskOpenSettings)); assert.ok(html.includes(en.deskUseText));
+  assert.ok(html.includes(en.deskVoiceNone)); assert.ok(startDisabled(html));
+  assert.ok(render(scored(90, 90), {}, { workspaceReady: false }).includes(en.deskBlockedWorkspace));
+});
+
+test('a returning user starts from the newest active role with a confirmed job and the newest confirmed resume', () => {
+  const current = { ...state(material('j', 'job', true), material('j2', 'job', false), material('r', 'resume', true, 'Old CV'), material('r2', 'resume', true, 'New CV')),
+    goals: [{ ...goal('g1', 'j'), title: 'Kept', createdAt: '2026-11-01' }, { ...goal('g2', 'j2'), title: 'Unconfirmed job', createdAt: '2026-11-05' },
+      { ...goal('g3', 'j'), title: 'Archived', status: 'archived', createdAt: '2026-11-09' }] };
+  current.materials[2].createdAt = '2026-11-01'; current.materials[3].createdAt = '2026-11-03';
+  assert.deepEqual({ ...prepare.initialPrepareDraft(current) }, { role: 'Kept', goalId: 'g1', jobVersionId: 'j', resumeVersionId: 'r2' });
+  assert.deepEqual({ ...prepare.initialPrepareDraft(state()) }, {});
 });
 
 test('prepare copy exists in both languages', () => {
@@ -90,23 +120,25 @@ test('a score belongs to its resume version, goal and job version', () => {
   assert.equal(score.resumeScore(unknown, scope).status, 'unknown'); assert.equal(score.resumeScore(unknown, scope).pass, false);
 });
 
-test('below 80 the start bar sends the user back to the score, and skipping opens it', () => {
+test('below 80 the start card sends the user to the score sheet, and skipping opens the start button', () => {
   const below = scored(70, 70);
   const gated = render(below);
   assert.ok(gated.includes(t('prepGateBelow', { score: 70 }))); assert.ok(gated.includes(en.prepGateBack));
-  assert.equal(gated.includes('>' + en.prepStart + '<'), false);
-  // The score step offers revising, editing and skipping.
-  for (const key of ['prepRevise', 'prepEditSelf', 'prepSkipScore']) assert.ok(gated.includes(en[key]), key);
+  assert.ok(gated.includes(t('deskScoreBelow', { score: 70, gap: 10 }))); assert.ok(startDisabled(gated));
+  // The score sheet offers revising, editing and skipping.
+  const sheet = render(below, {}, { sheet: 'score' });
+  for (const key of ['prepRevise', 'prepEditSelf', 'prepSkipScore', 'prepFitTitle', 'prepResumeTitle']) assert.ok(sheet.includes(en[key]), key);
   const skipped = render(below, { scoreSkippedFor: 'r' });
-  assert.ok(skipped.includes('>' + en.prepStart + '<')); assert.ok(skipped.includes(en.prepSkipped));
+  assert.equal(startDisabled(skipped), false); assert.ok(skipped.includes(en.prepSkipped));
   // A skip is for one resume version; a new version is scored again.
   assert.equal(prepare.prepareProgress(below, { role: 'R', jobVersionId: 'j', resumeVersionId: 'r', scoreSkippedFor: 'old' }).cleared, false);
 });
 
-test('before any score the start bar asks for one and does not offer skipping yet', () => {
+test('before any score the start card asks for one and does not offer skipping yet', () => {
   const html = render({ ...state(material('j', 'job', true), material('r', 'resume', true)) });
-  assert.ok(html.includes(en.prepGateNone)); assert.ok(html.includes(en.prepScoreRun));
+  assert.ok(html.includes(en.prepGateNone)); assert.ok(html.includes(en.deskScoreNone)); assert.ok(html.includes(en.deskScoreIt));
   assert.equal(html.includes(en.prepSkipScore), false);
+  assert.ok(render({ ...state(material('j', 'job', true), material('r', 'resume', true)) }, {}, { sheet: 'score' }).includes(en.prepScoreRun));
 });
 
 test('the flow reuses a goal already linked to this job version', () => {

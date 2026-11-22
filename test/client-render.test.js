@@ -43,6 +43,29 @@ test('workbench registers only native public slots and disposes every contributi
   assert.equal(entries.size, 0); assert.equal(resourceCount, 0); assert.equal(localeCount, 0);
 });
 
+test('the workbench slot carries the settings form and write-only credential actions, rebinding only when they change', async () => {
+  const plugin = await compile('client/index.jsx');
+  let options; const effects = [];
+  let form = { getSnapshot: () => ({ status: 'ready', writable: true, revision: 1, value: {} }), subscribe: () => () => {} };
+  const credentials = { describe: async () => ({ ok: true, value: {} }), set: async () => ({ ok: true }) };
+  const ctx = {
+    slots: { inject(_name, register) { return register(); }, register(value) { if (value.key === 'zhijing') options = value; return () => {}; } },
+    locale: { register: () => () => {}, bind: () => translate(en) }, resources: { register: () => () => {} },
+    sessions: {}, workspaces: { list: { getSnapshot: () => ({ items: [] }) } },
+    get: name => name === 'configForms' ? { get: key => key === 'dsh-interview-desk' ? form : undefined } : name === 'remote.credentials' ? credentials : undefined,
+    effect(install) { effects.push(install()); },
+  };
+  plugin.apply(ctx);
+  const first = options.inject(), second = options.inject();
+  assert.equal(first, second);
+  assert.equal(first.hooks.realtimeSettings, form); assert.ok(first.hooks.career);
+  for (const name of ['saveSettings', 'describeCredential', 'storeCredential', 'testAudio', 'cancelAudio']) assert.equal(typeof first.settingsActions[name], 'function', name);
+  assert.equal('resolve' in first.settingsActions, false);
+  form = { ...form };
+  assert.notEqual(options.inject(), first);
+  for (const dispose of effects.reverse()) dispose();
+});
+
 test('workbench interview callbacks bind materials then use native prompts for every mutation', async () => {
   const requests = [], prompts = [], created = [], effects = []; let actions, started = false;
   const plugin = await compile('client/index.jsx', { fetch: async (_url, options) => {
@@ -96,30 +119,38 @@ test('workbench voice enablement is user-triggered, uses only the official manag
   assert.equal(calls.length, 3);
 });
 
-test('a new user lands in the prepare flow, without the workbench chrome or fabricated scores', async () => {
+const appProps = (dictionary, data, extra = {}) => ({ t: translate(dictionary), useCareer: () => ({ data, ready: true, pending: 0 }), useNativeSessions: () => ({ ids: [], byId: {} }),
+  useWorkspaceChoices: () => ({ items: [], phase: 'ready' }), renderSlot: () => null, ...extra });
+
+test('a new user lands on the interview page: four rows, one start button, no old workbench chrome', async () => {
   const { App } = await compile('client/workbench.jsx');
   for (const dictionary of [zh, en]) {
-    const html = renderToStaticMarkup(React.createElement(App, { t: translate(dictionary), useCareer: () => ({ data: empty, ready: true, pending: 0 }), useNativeSessions: () => ({ ids: [], byId: {} }), useWorkspaceChoices: () => ({ items: [], phase: 'ready' }), renderSlot: () => null }));
+    const html = renderToStaticMarkup(React.createElement(App, appProps(dictionary, empty)));
     assert.ok(html.includes('data-prepare'));
-    for (const key of ['prepSlogan', 'prepLead', 'prepBegin', 'prepTheirs', 'prepYours', 'prepNotReady', 'prepSkip']) assert.ok(html.includes(dictionary[key]), key);
-    // The two inputs come before any promise about questions.
-    assert.ok(html.indexOf(dictionary.prepTheirs) < html.indexOf(dictionary.prepYours));
-    assert.equal(html.includes('class="zj-rail'), false);
-    assert.equal(html.includes('class="zj-desk-nav'), false);
-    assert.equal(html.includes('<iframe'), false);
-    assert.equal(html.includes('class="zj-score"'), false);
+    for (const key of ['prepSlogan', 'prepLead', 'deskRowJob', 'deskRowResume', 'deskRowScore', 'deskRowVoice', 'deskHeadJob', 'prepStart', 'navInterview', 'navReview', 'navLibrary', 'voiceChipNone', 'openSettings'])
+      assert.ok(html.includes(dictionary[key]), key);
+    // The rows come in the order the user meets them.
+    assert.ok(html.indexOf(dictionary.deskRowJob) < html.indexOf(dictionary.deskRowResume));
+    assert.ok(html.indexOf(dictionary.deskRowResume) < html.indexOf(dictionary.deskRowScore));
+    for (const old of ['class="zj-rail', 'class="zj-desk-nav', 'class="zj-review-note', '<iframe', 'class="zj-score"', 'data-step=']) assert.equal(html.includes(old), false, old);
+    // Nothing is fabricated before any score exists.
+    assert.equal(/\d+ ?分|\d+ · passed/.test(html.replace(/\d+ 题|\d+ questions/g, '')), false);
   }
 });
 
-test('a returning user keeps the workbench home and can open the prepare flow from it', async () => {
+test('a returning user starts from the newest role and confirmed resume, and voice says whether it is set up', async () => {
   const { App } = await compile('client/workbench.jsx');
-  const data = { ...empty, goals: [{ id: 'g', title: 'Role', status: 'active', materialLinks: [], conversations: [] }] };
+  const data = { ...empty,
+    materials: [{ id: 'mj', kind: 'job', title: 'JD', createdAt: '2026-11-01', latestVersionId: 'j1', versions: [{ id: 'j1', revision: 1, text: 'job', confirmed: true }] },
+      { id: 'mr', kind: 'resume', title: 'CV.pdf', createdAt: '2026-11-02', latestVersionId: 'r1', versions: [{ id: 'r1', revision: 1, text: 'cv', confirmed: true }] }],
+    goals: [{ id: 'old', title: 'Old role', status: 'archived', createdAt: '2026-11-03', materialLinks: [{ kind: 'job', versionId: 'j1' }], conversations: [] },
+      { id: 'g', title: 'Data analyst', status: 'active', createdAt: '2026-11-02', materialLinks: [{ kind: 'job', versionId: 'j1' }], conversations: [] }] };
   for (const dictionary of [zh, en]) {
-    const html = renderToStaticMarkup(React.createElement(App, { t: translate(dictionary), useCareer: () => ({ data, ready: true, pending: 0 }), useNativeSessions: () => ({ ids: [], byId: {} }), useWorkspaceChoices: () => ({ items: [], phase: 'ready' }), renderSlot: () => null }));
-    assert.equal(html.includes('data-prepare'), false);
-    assert.ok(html.includes(dictionary.deskIntro_home));
-    assert.ok(html.includes(dictionary.workspaceRequired));
-    assert.ok(html.includes(dictionary.enableHostVoice));
+    const html = renderToStaticMarkup(React.createElement(App, appProps(dictionary, data)));
+    assert.ok(html.includes('Data analyst')); assert.equal(html.includes('Old role'), false);
+    assert.ok(html.includes('CV.pdf')); assert.ok(html.includes(dictionary.deskHeadScore));
+    assert.ok(html.includes(dictionary.deskVoiceNone));
+    assert.equal(html.includes('data-settings-voice'), false);
   }
 });
 

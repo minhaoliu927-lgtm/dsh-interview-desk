@@ -6,6 +6,8 @@ const labels = { 'receipt.undo': 'deskUndone', 'assessment.run': 'taskAssessment
   'material.confirm': 'taskConfirmMaterial', 'goal.create': 'taskSaveGoal', 'goal.update': 'taskSaveGoal', 'goal.linkMaterial': 'taskLinkMaterial',
   'realtime.create': 'taskPrepareInterview', 'realtime.review': 'taskReviewTranscript', 'interview.finish': 'taskReport', 'conversation.link': 'taskSaveConversation' };
 
+export const receiptLabel = action => labels[action] || 'taskSucceeded';
+
 export function TaskCard({ operation, onCancel, onRetry, onOpen, t }) {
   if (!operation) return null;
   const status = { running: 'taskRunning', refreshing: 'taskRefreshing', succeeded: 'taskSucceeded', failed: 'taskFailed', cancelled: 'taskCancelled' }[operation.status];
