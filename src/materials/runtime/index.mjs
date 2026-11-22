@@ -632,6 +632,7 @@ function childEnvironment(env, cwd) {
     result[key] = value;
   }
   for (const key of ["TEMP", "TMP", "USERPROFILE", "HOME", "APPDATA", "LOCALAPPDATA"]) result[key] = cwd;
+  if (env.ELECTRON_RUN_AS_NODE === "1") result.ELECTRON_RUN_AS_NODE = "1";
   return result;
 }
 function receipt(file) {
@@ -1868,6 +1869,8 @@ export {
   extractPublicJob,
   isPublicJobAddress,
   normalizeJobUrl,
+  childEnvironment as parserChildEnvironment,
+  parserEnvironment,
   pinnedJobHttpTransport,
   resolvePublicJobUrl
 };

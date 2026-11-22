@@ -6,3 +6,5 @@ export { checkAcquisitionImage } from './acquisition/image-policy.ts';
 export { createHttpJobSource, pinnedJobHttpTransport } from './acquisition/http-job-source.ts';
 export { normalizeJobUrl, resolvePublicJobUrl, isPublicJobAddress } from './acquisition/public-url-policy.ts';
 export { extractPublicJob } from './acquisition/html-job-extractor.ts';
+export { parserChildEnvironment } from './parser/supervisor/platform.ts';
+export { parserEnvironment } from './parser/supervisor/environment.ts';

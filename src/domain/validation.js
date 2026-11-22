@@ -46,17 +46,48 @@ function boundary(value, offset) {
   return !(value.charCodeAt(offset - 1) >= 0xd800 && value.charCodeAt(offset - 1) <= 0xdbff
     && value.charCodeAt(offset) >= 0xdc00 && value.charCodeAt(offset) <= 0xdfff);
 }
-/** Validate exact evidence against immutable user material or the user's raw answer. */
-export function evidence(value, snapshots, { required = true } = {}) {
-  const rows = list(value, 20);
-  if (required && rows.length === 0) fail('EVIDENCE_REQUIRED');
-  return rows.map(item => {
-    const row = object(item, 'INVALID_EVIDENCE');
-    const sourceId = row.sourceId ?? row.versionId ?? row.answerId;
-    const source = snapshots.find(candidate => candidate.id === sourceId);
-    if (!source) fail('EVIDENCE_SOURCE_INVALID');
-    text(row.quote, 20_000, 'INVALID_EVIDENCE');
-    const quote = row.quote;
+function occurrences(haystack, needle) {
+  const found = [];
+  for (let index = haystack.indexOf(needle); index >= 0 && found.length < 1000; index = haystack.indexOf(needle, index + 1)) found.push(index);
+  return found;
+}
+const nearest = (positions, hint) => Number.isSafeInteger(hint)
+  ? positions.reduce((best, position) => Math.abs(position - hint) < Math.abs(best - hint) ? position : best) : positions[0];
+/** The text without whitespace, and where each remaining character sits in the original. */
+function compact(value) {
+  let result = '';
+  const map = [];
+  for (let index = 0; index < value.length; index++) {
+    if (/\s/u.test(value[index])) continue;
+    result += value[index]; map.push(index);
+  }
+  return { text: result, map };
+}
+/**
+ * Find a quote the model copied from a source but placed wrongly: miscounted
+ * offsets, a phrase that appears more than once, or a line break from PDF
+ * extraction that the model left out. The words themselves must be in the
+ * source; only whitespace may differ. Returns the range in the source, or null.
+ */
+export function locateQuote(sourceText, quote, hint) {
+  const exact = occurrences(sourceText, quote);
+  if (exact.length) { const start = nearest(exact, hint); return { start, end: start + quote.length }; }
+  const source = compact(sourceText), wanted = compact(quote).text;
+  if (wanted.length < 2) return null;
+  const loose = occurrences(source.text, wanted);
+  if (!loose.length) return null;
+  const looseHint = Number.isSafeInteger(hint) ? source.map.findIndex(position => position >= hint) : undefined;
+  const first = nearest(loose, looseHint >= 0 ? looseHint : undefined);
+  return { start: source.map[first], end: source.map[first + wanted.length - 1] + 1 };
+}
+function citation(item, snapshots, lenient) {
+  const row = object(item, 'INVALID_EVIDENCE');
+  const sourceId = row.sourceId ?? row.versionId ?? row.answerId;
+  const source = snapshots.find(candidate => candidate.id === sourceId);
+  if (!source) fail('EVIDENCE_SOURCE_INVALID');
+  text(row.quote, 20_000, 'INVALID_EVIDENCE');
+  const quote = row.quote;
+  try {
     let start = row.start;
     if (start === undefined) {
       start = source.text.indexOf(quote);
@@ -68,7 +99,29 @@ export function evidence(value, snapshots, { required = true } = {}) {
     if (!boundary(source.text, start) || !boundary(source.text, end) || source.text.slice(start, end) !== quote) fail('EVIDENCE_QUOTE_MISMATCH');
     if (row.hash !== undefined && row.hash !== source.hash) fail('EVIDENCE_HASH_MISMATCH');
     return { sourceId, start, end, quote, hash: source.hash };
-  });
+  } catch (error) {
+    if (!lenient || error.code === 'EVIDENCE_HASH_MISMATCH' || (row.hash !== undefined && row.hash !== source.hash)) throw error;
+    const found = locateQuote(source.text, quote, Number.isSafeInteger(row.start) ? row.start : undefined);
+    if (!found || !boundary(source.text, found.start) || !boundary(source.text, found.end)) throw error;
+    return { sourceId, start: found.start, end: found.end, quote: source.text.slice(found.start, found.end), hash: source.hash };
+  }
+}
+/**
+ * Validate exact evidence against immutable user material or the user's raw answer.
+ * Strict by default: every citation must point at its exact range. `lenient` is for
+ * scoring only: a citation is located again by its words, citations that are not in
+ * the material are dropped, and the call still fails when none is left.
+ */
+export function evidence(value, snapshots, { required = true, lenient = false } = {}) {
+  const rows = lenient && Array.isArray(value) ? value.slice(0, 20) : list(value, 20);
+  if (required && rows.length === 0) fail('EVIDENCE_REQUIRED');
+  if (!lenient) return rows.map(item => citation(item, snapshots, false));
+  const cited = [], errors = [];
+  for (const item of rows) {
+    try { cited.push(citation(item, snapshots, true)); } catch (error) { errors.push(error); }
+  }
+  if (required && cited.length === 0) throw errors[0];
+  return cited;
 }
 export const RESUME_RUBRIC = Object.freeze([
   { id: 'evidence', name: '经历与成果依据', weight: 35 },
@@ -87,13 +140,13 @@ export const INTERVIEW_RUBRIC = Object.freeze([
   { id: 'reasoning', name: '思考与说明', weight: 25 },
   { id: 'clarity', name: '表达清楚', weight: 15 },
 ]);
-export function scoredCriteria(value, rubric, snapshots, { pairedSources = false } = {}) {
+export function scoredCriteria(value, rubric, snapshots, { pairedSources = false, lenient = false } = {}) {
   const rows = list(value, rubric.length);
   if (rows.length !== rubric.length || new Set(rows.map(row => row.id)).size !== rubric.length) fail('RUBRIC_INCOMPLETE');
   return rubric.map(criterion => {
     const row = object(rows.find(item => item.id === criterion.id), 'RUBRIC_INCOMPLETE');
     const rating = row.rating === null ? null : integer(row.rating, 0, 4, 'INVALID_RATING');
-    const citations = evidence(row.evidence ?? [], snapshots, { required: rating !== null });
+    const citations = evidence(row.evidence ?? [], snapshots, { required: rating !== null, lenient });
     if (pairedSources && rating !== null) {
       if (!citations.some(ref => snapshots.find(source => source.id === ref.sourceId)?.kind === 'resume')
         || !citations.some(ref => snapshots.find(source => source.id === ref.sourceId)?.kind === 'job')) fail('FIT_EVIDENCE_INCOMPLETE');
