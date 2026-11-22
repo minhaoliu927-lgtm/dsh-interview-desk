@@ -51,6 +51,7 @@ export function createFakeHost({ seed = 'empty', voice = 'ready', model = 'ready
     workspaces.items[0].sessionIds.push('s-text');
     void resume;
   }
+
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
   // The plugin's own settings, as DSH ConfigForms and credentials would hold them.
   const settingsListeners = new Set();
@@ -86,6 +87,26 @@ export function createFakeHost({ seed = 'empty', voice = 'ready', model = 'ready
       ['structure', '内容组织', 20, [3, 3], '按时间倒序，结构合理。'],
       ['specificity', '内容具体', 20, [2, 3], '“做数据看板”这一段没有写具体做了什么。']],
   };
+  if (seed === 'history') {
+    // A returning user: two roles, three finished interviews with reports, and a score below 80 on the newest resume.
+    const resume = addMaterial({ title: '林未-简历.pdf', kind: 'resume', text: '林未，前端工程师，4 年经验。' }, true);
+    const job = addMaterial({ title: '高级前端工程师 岗位要求', kind: 'job', text: '负责核心产品的 Web 端架构与性能。' }, true);
+    const other = addMaterial({ title: '前端技术负责人 岗位要求', kind: 'job', text: '带领 6 人前端团队。' }, true);
+    const lead = addGoal({ title: '前端技术负责人', company: '云栈' }); lead.createdAt = '2026-11-02T09:00:00.000Z';
+    lead.materialLinks.push({ versionId: other.latestVersionId, kind: 'job' });
+    const goal = addGoal({ title: '高级前端工程师', company: '星桥科技' });
+    goal.materialLinks.push({ versionId: job.latestVersionId, kind: 'job' });
+    const days = ['2026-11-12', '2026-11-16', '2026-11-20'], totals = [62, 71, 78];
+    const summaries = ['讲清了首屏优化的过程，但没说怎么验证效果。', '性能问题定位讲得具体，团队协作部分偏空。', '追问下能给出数据和取舍，回答结构清楚。'];
+    days.forEach((date, index) => {
+      const interviewId = id('i'), reportId = id('rp'), sessionId = id('s');
+      data.interviews.push({ id: interviewId, goalId: index === 0 ? lead.id : goal.id, sessionId, mode: index === 1 ? 'text' : 'realtime', status: 'completed', reportId, language: 'zh', createdAt: `${date}T20:10:00.000Z`, questions: [], currentQuestionId: null });
+      data.reports.push({ id: reportId, interviewId, goalId: index === 0 ? lead.id : goal.id, total: totals[index], summary: summaries[index], createdAt: `${date}T20:40:00.000Z`, criteria: [] });
+    });
+    for (const [kind, total] of [['fit', 74], ['resume', 66]]) data.assessments.push({ id: id('a'), kind, goalId: goal.id, versionId: resume.latestVersionId,
+      inputVersions: [{ id: resume.latestVersionId, hash: 'h' }, { id: job.latestVersionId, hash: 'h' }], rubricVersion: 'preview', total, suggestions: [], missing: [], createdAt: now(),
+      criteria: rubrics[kind].map(([cid, name, weight]) => ({ id: cid, name, weight, rating: 3, score: total / 100 * weight, reason: '', evidence: [] })) });
+  }
   function assess({ kind, versionId, goalId }) {
     if (model !== 'ready') throw Object.assign(new Error('MODEL_NOT_CONFIGURED'), { code: 'MODEL_NOT_CONFIGURED' });
     const { material, row } = version(versionId), goal = data.goals.find(item => item.id === goalId);
@@ -115,6 +136,13 @@ export function createFakeHost({ seed = 'empty', voice = 'ready', model = 'ready
     material.versions.unshift({ id: id('v'), revision, text, confirmed: false, createdAt: now(), source });
     material.latestVersionId = material.versions[0].id; return material.versions[0];
   }
+  // Same lock as the real Host: one run per assessment kind, resume version and goal.
+  const locks = new Set();
+  async function locked(key, operation) {
+    if (locks.has(key)) throw Object.assign(new Error('此项操作正在进行'), { code: 'BUSY' });
+    locks.add(key);
+    try { return await operation(); } finally { locks.delete(key); }
+  }
   async function request(action, input = {}) {
     await delay(action === 'state' ? 20 : 260);
     switch (action) {
@@ -126,7 +154,7 @@ export function createFakeHost({ seed = 'empty', voice = 'ready', model = 'ready
       case 'goal.linkMaterial': { const goal = data.goals.find(row => row.id === input.goalId), { material } = version(input.versionId);
         goal.materialLinks = [...goal.materialLinks.filter(link => link.kind !== material.kind), { versionId: input.versionId, kind: material.kind }]; return structuredClone(goal); }
       case 'material.update': { const material = data.materials.find(row => row.id === input.materialId); addVersion(material, input.text, { kind: 'user_edit' }); return structuredClone(material); }
-      case 'assessment.run': await delay(1600); return structuredClone(assess(input));
+      case 'assessment.run': return locked(`assessment:${input.kind ?? 'resume'}:${input.versionId}:${input.goalId ?? ''}`, async () => { await delay(1600); return structuredClone(assess(input)); });
       case 'rewrite.run': await delay(1800); if (model !== 'ready') throw Object.assign(new Error('MODEL_NOT_CONFIGURED'), { code: 'MODEL_NOT_CONFIGURED' }); return structuredClone(rewrite(input));
       case 'rewrite.accept': {
         const proposal = data.rewrites.find(row => row.id === input.rewriteId), { material, row } = version(proposal.versionId);

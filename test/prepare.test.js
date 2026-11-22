@@ -162,3 +162,23 @@ test('the previous version score shows the change after a revision', () => {
   current.assessments.unshift(assessment('fit', 90, { versionId: 'r2' }), assessment('resume', 90, { versionId: 'r2' }));
   assert.equal(score.previousScore(current, { goalId: 'g', resumeVersionId: 'r2', jobVersionId: 'j' }, 'm-r'), 60);
 });
+
+test('scoring waits for both assessments and reports the first failure after both finish', async () => {
+  const order = [];
+  const slow = new Promise(resolve => setTimeout(() => { order.push('fit saved'); resolve('fit'); }, 20));
+  const busy = Promise.reject(Object.assign(new Error('BUSY'), { code: 'BUSY' }));
+  await assert.rejects(prepare.settleAll([slow, busy]).finally(() => order.push('settled')), { code: 'BUSY' });
+  assert.deepEqual(order, ['fit saved', 'settled']);
+  assert.deepEqual([...await prepare.settleAll([Promise.resolve(1), Promise.resolve(2)])], [1, 2]);
+});
+
+test('a failed score says what went wrong and keeps the code for a report', () => {
+  const zhT = (key, params = {}) => String(zh[key] || key).replace(/\{([^}]+)\}/g, (_match, name) => params[name] ?? name);
+  assert.equal(prepare.failureText({ code: 'BUSY' }, zhT), `${zh.prepFailBusy}（代码 BUSY）`);
+  assert.equal(prepare.failureText({ code: 'EVIDENCE_QUOTE_MISMATCH' }, t), `${en.prepFailEvidence} (code EVIDENCE_QUOTE_MISMATCH)`);
+  assert.equal(prepare.failureText({ code: 'MODEL_INVALID_JSON' }, t), `${en.prepFailFormat} (code MODEL_INVALID_JSON)`);
+  assert.equal(prepare.failureText({ code: 'MODEL_NOT_CONFIGURED' }, t), `${en.prepFailModel} (code MODEL_NOT_CONFIGURED)`);
+  // Only stable Host codes are shown, never a raw message.
+  assert.equal(prepare.failureText({ code: 'lowercase raw message' }, t), en.prepFailGeneric);
+  assert.equal(prepare.failureText(new Error('boom'), t), en.prepFailGeneric);
+});

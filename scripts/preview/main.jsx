@@ -40,4 +40,4 @@ const props = {
   useRealtimeSettings, settingsActions: { saveSettings: settings.saveSettings, describeCredential: settings.describeCredential, storeCredential: settings.storeCredential, testAudio: settings.testAudio, cancelAudio: settings.cancelAudio },
 };
 window.__zjPreview = { host, client };
-createRoot(document.getElementById('root')).render(<App {...props}/>);
+createRoot(document.getElementById('root')).render(<App {...props} initialPage={query.get('page') || undefined}/>);

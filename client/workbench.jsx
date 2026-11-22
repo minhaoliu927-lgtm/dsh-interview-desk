@@ -17,12 +17,13 @@ import { materialChatContext, contextDraft } from './desk-context.js';
 import { SettingsDialog } from './settings-dialog.jsx';
 import { ReviewPage } from './review-page.jsx';
 import { LibraryPage } from './library-page.jsx';
+import { HomePage } from './home-page.jsx';
 import { DESK_PAGES, deskNavigation, initialDesk } from './desk-nav.js';
 import { realtimeUnavailable } from './voice/realtime-call.js';
 
 export { deskNavigation, initialDesk } from './desk-nav.js';
 
-const PAGE_LABELS = { interview: 'navInterview', review: 'navReview', library: 'navLibrary' };
+const PAGE_LABELS = { home: 'navHome', interview: 'navInterview', review: 'navReview', library: 'navLibrary' };
 const ERRORS = new Set(['NATIVE_DRAFT_UNAVAILABLE', 'NATIVE_DRAFT_BLOCKED', 'CONTEXT_UNAVAILABLE', 'NETWORK', 'FILE_TOO_LARGE', 'JOB_MATERIAL_REQUIRED', 'INVALID_RESPONSE', 'REQUEST_FAILED', 'EXPORT_FAILED', 'WORKSPACE_REQUIRED']);
 const newest = (a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
 
@@ -54,10 +55,10 @@ export function useVoiceStatus(realtimeApi) {
 
 export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, action, upload, refresh, cancelCurrent, retryCurrent, createConversation, startInterview, interviewAction, download,
   voiceApi, realtimeApi, prepareChatDraft, enableVoiceInput, openVoiceSettings, openWorkspaceManager, readSource, loadOriginal, downloadOriginal, useResource, SessionProvider, renderSlot,
-  useRealtimeSettings, settingsActions = {} }) {
+  useRealtimeSettings, settingsActions = {}, initialPage }) {
   const snapshot = useCareer(value => value);
   const state = snapshot.data;
-  const [nav, navigate] = React.useReducer(deskNavigation, undefined, initialDesk);
+  const [nav, navigate] = React.useReducer(deskNavigation, initialPage, initialDesk);
   const navRef = React.useRef(nav); navRef.current = nav;
   const drafts = nav.drafts;
   const saveDraft = (key, value) => navigate({ type: 'draft', key, value });
@@ -246,6 +247,9 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
     openRealtimeSettings={openSettings} onChanged={refresh} nativeChat={null} onEvidence={showEvidence}
     answerDraft={drafts[`answer:${roomInterview.id}:${roomInterview.currentQuestionId}`]} onAnswerDraftChange={value => saveDraft(`answer:${roomInterview.id}:${roomInterview.currentQuestionId}`, value)}/>
     : <div className="zj-page"><p className="zj-hint" role="status">{t('interviewWaiting')}</p></div>;
+  else if (nav.page === 'home') page = <HomePage t={t} state={state} draft={prepareDraft} busy={busy} voiceReady={voice.ready} voiceChecking={voice.checking}
+    workspaceReady={Boolean(selectedWorkspace)} nativeTitles={nativeSessions.byId} onPrepare={sheet => navigate({ type: 'page', page: 'interview', sheet })}
+    onUseRole={useRole} onEnterRoom={enterRoom} onPage={target => navigate({ type: 'page', page: target })} onOpenSettings={openSettings}/>;
   else if (nav.page === 'review') page = <ReviewPage t={t} state={state} nativeTitles={nativeSessions.byId} open={nav.open} onOpen={target => navigate({ type: 'open', target })} onClose={() => navigate({ type: 'close' })}
     onEnterRoom={enterRoom} busy={busy} onExport={exportFile} onEvidence={showEvidence} onAction={perform} onReviewVersion={reviewVersion} drafts={drafts} onDraft={saveDraft}/>;
   else if (nav.page === 'library') page = <LibraryPage t={t} state={state} open={nav.open} onOpen={target => navigate({ type: 'open', target })} onClose={() => navigate({ type: 'close' })} busy={busy}

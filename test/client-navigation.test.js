@@ -29,9 +29,10 @@ const fixture = () => ({ materials: [
 const nav = await compile('client/desk-nav.js');
 const step = (state, ...events) => events.reduce(nav.deskNavigation, state);
 
-test('one state decides the screen: three pages, and the interview room covers them', () => {
+test('one state decides the screen: four pages opening on home, and the interview room covers them', () => {
   let state = nav.initialDesk();
-  assert.equal(nav.deskScreen(state), 'interview');
+  assert.equal(nav.deskScreen(state), 'home');
+  assert.equal(nav.initialDesk('interview').page, 'interview'); assert.equal(nav.initialDesk('goals').page, 'home');
   state = step(state, { type: 'page', page: 'library' }, { type: 'open', target: { kind: 'material', id: 'm1' } });
   assert.equal(nav.deskScreen(state), 'library:material');
   state = step(state, { type: 'room', sessionId: 's1' });
@@ -42,11 +43,19 @@ test('one state decides the screen: three pages, and the interview room covers t
   // A tab click always lands on the tab itself.
   state = step(state, { type: 'room', sessionId: 's1' }, { type: 'page', page: 'review' });
   assert.equal(nav.deskScreen(state), 'review'); assert.equal(state.room, null);
-  assert.deepEqual([...nav.DESK_PAGES], ['interview', 'review', 'library']);
+  assert.deepEqual([...nav.DESK_PAGES], ['home', 'interview', 'review', 'library']);
+});
+
+test('home opens the interview page at the sheet for the next step, and only there', () => {
+  let state = step(nav.initialDesk(), { type: 'page', page: 'interview', sheet: 'score' });
+  assert.equal(state.page, 'interview'); assert.equal(state.sheet, 'score');
+  state = step(state, { type: 'page', page: 'home' }, { type: 'page', page: 'interview', sheet: 'nonsense' });
+  assert.equal(state.sheet, null);
+  assert.equal(step(nav.initialDesk(), { type: 'page', page: 'review', sheet: 'job' }).sheet, null);
 });
 
 test('unknown pages and sheets are ignored; settings and the assistant never move the page', () => {
-  let state = step(nav.initialDesk(), { type: 'page', page: 'goals' }, { type: 'open', page: 'home', target: { kind: 'goal', id: 'g' } });
+  let state = step(nav.initialDesk('interview'), { type: 'page', page: 'goals' }, { type: 'open', page: 'personal', target: { kind: 'goal', id: 'g' } });
   assert.equal(state.page, 'interview'); assert.equal(state.open, null);
   state = step(state, { type: 'sheet', sheet: 'score' });
   assert.equal(state.sheet, 'score');

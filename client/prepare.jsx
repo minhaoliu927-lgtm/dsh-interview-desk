@@ -65,12 +65,28 @@ export function startBlock(progress, { voiceReady = false, workspaceReady = fals
 
 const HEADS = { job: 'deskHeadJob', resume: 'deskHeadResume', score: 'deskHeadScore', voice: 'deskHeadVoice', workspace: 'deskHeadWorkspace' };
 
-function failureText(error, t) {
-  const code = error?.code || '';
-  if (code === 'MODEL_NOT_CONFIGURED') return t('prepFailModel');
-  if (code === 'MODEL_TIMEOUT') return t('prepFailTimeout');
-  if (code.startsWith('REWRITE_')) return t('prepFailRewrite');
-  return t('prepFailGeneric');
+const EVIDENCE_FAILURES = new Set(['EVIDENCE_QUOTE_MISMATCH', 'EVIDENCE_RANGE_REQUIRED', 'EVIDENCE_REQUIRED', 'EVIDENCE_SOURCE_INVALID',
+  'EVIDENCE_HASH_MISMATCH', 'INVALID_EVIDENCE', 'FIT_EVIDENCE_INCOMPLETE']);
+const FORMAT_FAILURES = new Set(['MODEL_INVALID_JSON', 'INVALID_MODEL_RESULT', 'RUBRIC_INCOMPLETE', 'INVALID_RATING', 'INVALID_TEXT', 'MODEL_INCOMPLETE']);
+
+/** What went wrong in plain words, with the Host's code so a report can name it. */
+export function failureText(error, t) {
+  const code = typeof error?.code === 'string' ? error.code : '';
+  const words = code === 'MODEL_NOT_CONFIGURED' || code === 'MODEL_SELECTION_INVALID' ? t('prepFailModel')
+    : code === 'MODEL_TIMEOUT' ? t('prepFailTimeout')
+      : code === 'BUSY' || code === 'REQUEST_IN_PROGRESS' ? t('prepFailBusy')
+        : EVIDENCE_FAILURES.has(code) ? t('prepFailEvidence')
+          : FORMAT_FAILURES.has(code) ? t('prepFailFormat')
+            : code.startsWith('REWRITE_') ? t('prepFailRewrite') : t('prepFailGeneric');
+  return /^[A-Z][A-Z0-9_]{1,80}$/u.test(code) ? `${words}${t('prepFailCode', { code })}` : words;
+}
+
+/** Run every call to the end, then report the first failure: one side failing must not hide the other. */
+export async function settleAll(calls) {
+  const results = await Promise.allSettled(calls);
+  const failed = results.find(result => result.status === 'rejected');
+  if (failed) throw failed.reason;
+  return results.map(result => result.value);
 }
 
 const excerpt = (text, length = 400) => String(text || '').trim().slice(0, length);
@@ -170,7 +186,7 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
     const current = resumeScore(state, { goalId, resumeVersionId: versionId, jobVersionId: job.version.id });
     // Only what this resume version still lacks; a fresh version needs both.
     const kinds = versionId === resume?.version.id ? current.missing : ['fit', 'resume'];
-    await Promise.all(kinds.map(kind => act('assessment.run', { kind, versionId, goalId })));
+    await settleAll(kinds.map(kind => act('assessment.run', { kind, versionId, goalId })));
   };
   // Called right after a confirmation too, when this render's state is not refreshed yet,
   // so it takes the version id instead of reading readiness from the closure.

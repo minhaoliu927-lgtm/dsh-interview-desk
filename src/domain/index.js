@@ -263,7 +263,9 @@ export function createCareerService({ directory, generate }) {
     if (kind === 'fit' && !input.goalId && !options.sessionId && !input.sessionId) fail('GOAL_REQUIRED');
     const data = taskSnapshots(input, options, kind === 'fit');
     const rubric = kind === 'fit' ? FIT_RUBRIC : RESUME_RUBRIC;
-    return locked(`assessment:${data.selected.id}:${data.target?.id ?? ''}`, () => model('assessment.run', {
+    // The lock stops the same assessment from running twice. Fit and resume are
+    // different assessments of the same version and may run side by side.
+    return locked(`assessment:${kind}:${data.selected.id}:${data.target?.id ?? ''}`, () => model('assessment.run', {
       sessionId: data.sessionId,
       kind, goal: data.target ? { id: data.target.id, title: data.target.title, company: data.target.company } : null,
       snapshots: data.snapshots, rubric,
@@ -271,10 +273,19 @@ export function createCareerService({ directory, generate }) {
       output: { criteria: [{ id: 'rubric中的id', rating: '0..4或null', reason: '具体理由', evidence: [{ sourceId: 'snapshots.id', quote: '原文' }] }],
         suggestions: [{ text: '具体修改建议', evidence: [{ sourceId: 'snapshots.id', quote: '原文' }] }], missing: ['无法判断所缺的资料'] },
     }, value => {
-      const criteria = scoredCriteria(value.criteria, rubric, data.snapshots, { pairedSources: kind === 'fit' });
-      const suggestions = list(value.suggestions ?? [], 30).map(row => ({ text: text(row.text, 6000), evidence: evidence(row.evidence, data.snapshots) }));
+      // Every rated criterion still needs a quote that is really in the material.
+      // A quote the model mislocated is found again; one it invented is dropped,
+      // and a criterion left with no real quote fails the run as before.
+      const criteria = scoredCriteria(value.criteria, rubric, data.snapshots, { pairedSources: kind === 'fit', lenient: true });
+      // Suggestions are advice: one without a real quote is left out instead of failing the score.
+      const suggestions = (Array.isArray(value.suggestions) ? value.suggestions.slice(0, 30) : []).flatMap(row => {
+        try { return [{ text: text(row?.text, 6000), evidence: evidence(row?.evidence ?? [], data.snapshots, { lenient: true }) }]; }
+        catch { return []; }
+      });
+      const missing = (Array.isArray(value.missing) ? value.missing.slice(0, 30) : [])
+        .flatMap(item => { try { return [text(item, 2000)]; } catch { return []; } });
       return { kind, goalId: data.target?.id ?? null, versionId: data.selected.id, inputVersions: data.snapshots.map(row => ({ id: row.id, hash: row.hash })),
-        rubricVersion: RUBRIC_VERSION, criteria, total: totalScore(criteria), suggestions, missing: list(value.missing ?? [], 30).map(item => text(item, 2000)) };
+        rubricVersion: RUBRIC_VERSION, criteria, total: totalScore(criteria), suggestions, missing };
     }, options, (result, runId) => saveArtifact('assessment', runId, result)));
   }
 

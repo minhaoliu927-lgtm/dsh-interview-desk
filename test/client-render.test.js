@@ -122,10 +122,54 @@ test('workbench voice enablement is user-triggered, uses only the official manag
 const appProps = (dictionary, data, extra = {}) => ({ t: translate(dictionary), useCareer: () => ({ data, ready: true, pending: 0 }), useNativeSessions: () => ({ ids: [], byId: {} }),
   useWorkspaceChoices: () => ({ items: [], phase: 'ready' }), renderSlot: () => null, ...extra });
 
-test('a new user lands on the interview page: four rows, one start button, no old workbench chrome', async () => {
+test('a new user lands on home: the slogan, one way in, how an interview goes, and nothing made up', async () => {
   const { App } = await compile('client/workbench.jsx');
   for (const dictionary of [zh, en]) {
     const html = renderToStaticMarkup(React.createElement(App, appProps(dictionary, empty)));
+    assert.ok(html.includes('data-screen="home"'));
+    for (const key of ['navHome', 'navInterview', 'navReview', 'navLibrary', 'prepSlogan', 'prepLead', 'homeStartFirst', 'homeSetupVoice', 'homeHowLabel',
+      'homeStep1Title', 'homeStep2Title', 'homeStep3Title', 'homeStep4Title', 'homeVoiceNone']) assert.ok(html.includes(dictionary[key]), key);
+    const markup = html.replace(/<style>[\s\S]*?<\/style>/u, '');
+    assert.ok(markup.indexOf(dictionary.navHome) < markup.indexOf(dictionary.navInterview));
+    // No record exists yet, so no stats, recent interviews or roles are shown.
+    for (const part of ['zj-home-hero', 'zj-stat', 'zj-home-roles', 'zj-spark', 'zj-tile']) assert.equal(markup.includes(part), false, part);
+    assert.equal(/\d+ ?分|\/ 100/.test(markup.replace(/80 ?分|65%|35%|5 题|\d+ questions/g, '')), false);
+  }
+});
+
+test('a returning user sees the next role, its steps, the record so far and every role on home', async () => {
+  const { App } = await compile('client/workbench.jsx');
+  const data = { ...empty,
+    materials: [{ id: 'mj', kind: 'job', title: 'JD', createdAt: '2026-11-01', latestVersionId: 'j1', versions: [{ id: 'j1', revision: 1, text: 'job', confirmed: true }] },
+      { id: 'mk', kind: 'job', title: 'JD2', createdAt: '2026-11-01', latestVersionId: 'j2', versions: [{ id: 'j2', revision: 1, text: 'job 2', confirmed: true }] },
+      { id: 'mr', kind: 'resume', title: 'CV.pdf', createdAt: '2026-11-02', latestVersionId: 'r1', versions: [{ id: 'r1', revision: 1, text: 'cv', confirmed: true }] }],
+    goals: [{ id: 'g', title: 'Data analyst', status: 'active', createdAt: '2026-11-02', materialLinks: [{ kind: 'job', versionId: 'j1' }], conversations: [] },
+      { id: 'h', title: 'BI lead', status: 'active', createdAt: '2026-11-01', materialLinks: [{ kind: 'job', versionId: 'j2' }], conversations: [] }],
+    assessments: ['fit', 'resume'].map(kind => ({ id: `a-${kind}`, kind, goalId: 'g', versionId: 'r1', inputVersions: [{ id: 'r1' }, { id: 'j1' }], total: kind === 'fit' ? 90 : 70, suggestions: [], missing: [], criteria: [] })),
+    interviews: [{ id: 'i1', goalId: 'g', sessionId: 's1', mode: 'realtime', status: 'completed', reportId: 'p1', createdAt: '2026-11-10T10:00:00Z', questions: [] },
+      { id: 'i2', goalId: 'g', sessionId: 's2', mode: 'text', status: 'completed', reportId: 'p2', createdAt: '2026-11-12T10:00:00Z', questions: [] }],
+    reports: [{ id: 'p1', interviewId: 'i1', total: 64, summary: 'first', createdAt: '2026-11-10T11:00:00Z' }, { id: 'p2', interviewId: 'i2', total: 77, summary: 'second', createdAt: '2026-11-12T11:00:00Z' }] };
+  for (const dictionary of [zh, en]) {
+    const t = translate(dictionary);
+    const html = renderToStaticMarkup(React.createElement(App, appProps(dictionary, data)));
+    assert.ok(html.includes('data-page="home"'));
+    assert.ok(html.includes('Data analyst')); assert.ok(html.includes('BI lead'));
+    // 90 × 65% + 70 × 35% = 83: passed, so the next step is voice (not set up here).
+    assert.ok(html.includes(dictionary.deskHeadVoice)); assert.ok(html.includes(dictionary.homeScorePass));
+    assert.ok(html.includes('>83<'));
+    assert.ok(html.includes(t('homeStatCount', { count: 2 }))); assert.ok(html.includes(t('homeStatDone', { done: 2 })));
+    // The newest report leads, with a trend line over both.
+    assert.ok(html.indexOf('second') < html.indexOf('first'));
+    assert.ok(html.includes('class="zj-spark"'));
+    assert.ok(html.includes(dictionary.homeRoleCurrent)); assert.ok(html.includes(dictionary.homeRolePrepare));
+    for (const key of ['homeRecent', 'homeRoles', 'homeAllReview', 'homeAllLibrary', 'homeSwitchRole']) assert.ok(html.includes(dictionary[key]), key);
+  }
+});
+
+test('the interview page: four rows, one start button, no old workbench chrome', async () => {
+  const { App } = await compile('client/workbench.jsx');
+  for (const dictionary of [zh, en]) {
+    const html = renderToStaticMarkup(React.createElement(App, appProps(dictionary, empty, { initialPage: 'interview' })));
     assert.ok(html.includes('data-prepare'));
     for (const key of ['prepSlogan', 'prepLead', 'deskRowJob', 'deskRowResume', 'deskRowScore', 'deskRowVoice', 'deskHeadJob', 'prepStart', 'navInterview', 'navReview', 'navLibrary', 'voiceChipNone', 'openSettings'])
       assert.ok(html.includes(dictionary[key]), key);
@@ -146,7 +190,7 @@ test('a returning user starts from the newest role and confirmed resume, and voi
     goals: [{ id: 'old', title: 'Old role', status: 'archived', createdAt: '2026-11-03', materialLinks: [{ kind: 'job', versionId: 'j1' }], conversations: [] },
       { id: 'g', title: 'Data analyst', status: 'active', createdAt: '2026-11-02', materialLinks: [{ kind: 'job', versionId: 'j1' }], conversations: [] }] };
   for (const dictionary of [zh, en]) {
-    const html = renderToStaticMarkup(React.createElement(App, appProps(dictionary, data)));
+    const html = renderToStaticMarkup(React.createElement(App, appProps(dictionary, data, { initialPage: 'interview' })));
     assert.ok(html.includes('Data analyst')); assert.equal(html.includes('Old role'), false);
     assert.ok(html.includes('CV.pdf')); assert.ok(html.includes(dictionary.deskHeadScore));
     assert.ok(html.includes(dictionary.deskVoiceNone));

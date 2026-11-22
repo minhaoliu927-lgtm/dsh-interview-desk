@@ -6,6 +6,7 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { createCareerService } from '../src/domain/index.js';
 import { CAREER_MIGRATIONS } from '../src/domain/store.js';
+import { evidence } from '../src/domain/validation.js';
 
 const testRoot = path.resolve(process.env.ZHIJING_TEST_ROOT ?? fileURLToPath(new URL('../.runtime/tests/domain/', import.meta.url)));
 const RESUME = '负责产品调研，访谈20名用户。\n整理需求文档。';
@@ -288,7 +289,61 @@ test('source quote offsets preserve Chinese and emoji UTF-16 boundaries', async 
     evidence: [{ sourceId: args.input.snapshots[0].id, quote: '😀', start: 1, end: 2 }] })), suggestions: [], missing: [] }));
   const personal = await dispatch('material.add', { title: '中文简历', kind: 'resume', text: '甲😀乙' });
   await dispatch('material.confirm', { versionId: personal.latestVersionId });
-  await assert.rejects(dispatch('assessment.run', { versionId: personal.latestVersionId }), { code: 'EVIDENCE_QUOTE_MISMATCH' });
+  // Exact citations never accept a range that splits a character.
+  const source = { id: personal.latestVersionId, text: '甲😀乙', hash: 'h' };
+  assert.throws(() => evidence([{ sourceId: source.id, quote: '😀', start: 1, end: 2 }], [source]), { code: 'EVIDENCE_QUOTE_MISMATCH' });
+  // A score finds the whole character again instead of storing half of it.
+  const result = await dispatch('assessment.run', { versionId: personal.latestVersionId });
+  assert.deepEqual(result.criteria.map(row => [row.evidence[0].start, row.evidence[0].end, row.evidence[0].quote]), result.criteria.map(() => [1, 3, '😀']));
+});
+
+test('fit and resume scores of one resume version for one goal can run at the same time', async t => {
+  let running = 0, overlap = 0;
+  const { dispatch } = fixture(t, async args => {
+    running++; overlap = Math.max(overlap, running);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    running--; return responder(args);
+  });
+  const { versionId, goal } = await prepared(dispatch);
+  const [fit, resume] = await Promise.all(['fit', 'resume'].map(kind => dispatch('assessment.run', { kind, versionId, goalId: goal.id })));
+  assert.equal(overlap, 2);
+  assert.deepEqual([fit.kind, resume.kind], ['fit', 'resume']);
+  assert.equal((await dispatch('state')).assessments.length, 2);
+  // The same assessment twice at once is still refused.
+  const twice = await Promise.allSettled([1, 2].map(() => dispatch('assessment.run', { kind: 'fit', versionId, goalId: goal.id })));
+  assert.deepEqual(twice.map(row => row.status).sort(), ['fulfilled', 'rejected']);
+  assert.equal(twice.find(row => row.status === 'rejected').reason.code, 'BUSY');
+});
+
+test('a score survives quotes the model placed wrongly but still refuses invented ones', async t => {
+  const PDF_RESUME = '负责产品调研，访谈20名\n用户。\n整理需求文档。\n整理需求文档。';
+  let mode = 'located';
+  const { dispatch } = fixture(t, ({ task, input }) => {
+    const [resume, job] = ['resume', 'job'].map(kind => input.snapshots.find(source => source.kind === kind));
+    const pair = quote => [{ sourceId: resume.id, quote, start: 3 }, { sourceId: job.id, quote: '用户调研' }];
+    const criteria = input.rubric.map(row => ({ id: row.id, rating: 3, reason: '依据',
+      evidence: mode === 'invented' ? [{ sourceId: resume.id, quote: '带领百人团队' }, { sourceId: job.id, quote: '用户调研' }]
+        // Wrong offset, a PDF line break the model dropped, a repeated line, and one invented quote among real ones.
+        : [...pair('访谈20名用户。'), { sourceId: resume.id, quote: '整理需求文档。' }, { sourceId: resume.id, quote: '不存在的原文', start: 0, end: 6 }] }));
+    return envelope({ criteria, suggestions: [{ text: '补充方法', evidence: [{ sourceId: resume.id, quote: '编造的句子' }] }, { text: '说明结果', evidence: [cite(job)] }],
+      missing: ['', '缺少作品集'] });
+  });
+  const personal = await dispatch('material.add', { title: '简历', kind: 'resume', text: PDF_RESUME });
+  const job = await dispatch('material.add', { title: '岗位', kind: 'job', text: JOB });
+  const goal = await dispatch('goal.create', { title: '产品经理' });
+  for (const row of [personal, job]) await dispatch('material.confirm', { versionId: row.latestVersionId });
+  await dispatch('goal.linkMaterial', { goalId: goal.id, versionId: job.latestVersionId });
+  const fit = await dispatch('assessment.run', { kind: 'fit', versionId: personal.latestVersionId, goalId: goal.id });
+  assert.equal(fit.total, 75);
+  const cited = fit.criteria[0].evidence;
+  assert.equal(cited.length, 3);
+  // Stored quotes are the material's own text at the stored range, line break included.
+  for (const row of cited) assert.equal((row.sourceId === personal.latestVersionId ? PDF_RESUME : JOB).slice(row.start, row.end), row.quote);
+  assert.equal(cited[0].quote, '访谈20名\n用户。');
+  assert.deepEqual(fit.suggestions.map(row => row.text), ['说明结果']);
+  assert.deepEqual(fit.missing, ['缺少作品集']);
+  mode = 'invented';
+  await assert.rejects(dispatch('assessment.run', { kind: 'fit', versionId: personal.latestVersionId, goalId: goal.id }), { code: 'FIT_EVIDENCE_INCOMPLETE' });
 });
 
 test('exclusive owner prevents a second service from recovering another live service runs', async t => {
