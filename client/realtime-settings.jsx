@@ -18,6 +18,8 @@ export function realtimeSettingsValue(value = {}) {
 /** Public Host configuration and write-only credentials; never resolve/read a secret. */
 export function createRealtimeSettingsActions(form, credentials, api) {
   const request = (...args) => (api ??= createApi()).request(...args);
+  // New settings or a new key have not been tested: the previous pass no longer counts.
+  const forgetTest = async () => { try { await request('realtime.forget', {}); } catch { /* The Host also rechecks the settings it tested. */ } };
   const currentRef = () => realtimeSettingsValue(form?.getSnapshot()?.value).realtimeCredential;
   const describeCredential = async ref => {
     if (form?.getSnapshot()?.status !== 'ready' || !credentials?.describe || !REF.test(ref) || ref !== currentRef()) return { status: 'unavailable' };
@@ -34,9 +36,12 @@ export function createRealtimeSettingsActions(form, credentials, api) {
       const next = realtimeSettingsValue(value);
       if (!['beijing', 'singapore'].includes(next.realtimeRegion) || !REALTIME_MODELS.includes(next.realtimeModel)
         || typeof next.realtimeWorkspace !== 'string' || (next.realtimeEnabled && !WORKSPACE.test(next.realtimeWorkspace)) || !REF.test(next.realtimeCredential)) return 'invalid';
-      try {
-        return await form.mutate(Object.entries(next).map(([field, value]) => ({ op: 'set', path: [field], value })), revision) ? 'saved' : 'conflict';
-      } catch { return 'failed'; }
+      let saved;
+      try { saved = await form.mutate(Object.entries(next).map(([field, value]) => ({ op: 'set', path: [field], value })), revision); }
+      catch { return 'failed'; }
+      if (!saved) return 'conflict';
+      await forgetTest();
+      return 'saved';
     },
     describeCredential,
     async testAudio(options) {
@@ -55,8 +60,12 @@ export function createRealtimeSettingsActions(form, credentials, api) {
       const info = await describeCredential(ref);
       if (info.status !== 'ready') return 'failed';
       if (!info.writable) return 'readonly';
-      try { return (await credentials.set(ref, value)).ok ? 'saved' : 'failed'; }
+      let stored;
+      try { stored = (await credentials.set(ref, value)).ok; }
       catch { return 'failed'; }
+      if (!stored) return 'failed';
+      await forgetTest();
+      return 'saved';
     },
   };
 }
@@ -67,8 +76,20 @@ const PROBE_ERRORS = {
   'probe-no-audio': 'rtProbeNoAudio', 'invalid-audio': 'rtProbeNoAudio', 'probe-no-transcript': 'rtProbeNoTranscript',
   'authentication-failed': 'rtProbeAuthentication', 'access-denied': 'rtProbeAccess', 'endpoint-unavailable': 'rtProbeEndpoint',
   'rate-limited': 'rtProbeRateLimit', 'provider-unavailable': 'rtProbeProvider', 'dns-failed': 'rtProbeNetwork', 'tls-failed': 'rtProbeTls',
-  cancelled: 'rtProbeCancelled',
+  cancelled: 'rtProbeCancelled', 'session-rejected': 'rtProbeSession', 'provider-error': 'rtProbeRejected',
 };
+/** The sentence for a kept failure code such as "provider-error · invalid_value". */
+export function probeMessageFor(code) {
+  const own = typeof code === 'string' ? code.split(' · ')[0] : '';
+  return Object.hasOwn(PROBE_ERRORS, own) ? PROBE_ERRORS[own] : 'rtProbeFailed';
+}
+const SHOWN_CODE = /^[a-z][a-z-]{1,40}$/u, SHOWN_DETAIL = /^[A-Za-z][A-Za-z_.-]{1,47}$/u;
+/** The code shown after a failed test: ours, plus the audio service's own short code when it sent one. */
+export function probeFailureCode(error) {
+  const code = typeof error?.code === 'string' && SHOWN_CODE.test(error.code) ? error.code : null;
+  if (!code || ['cancelled', 'BUSY'].includes(code)) return undefined;
+  return typeof error.detail === 'string' && SHOWN_DETAIL.test(error.detail) ? `${code} · ${error.detail}` : code;
+}
 
 function createProbeRequestId() {
   const crypto = globalThis.crypto;
@@ -132,7 +153,7 @@ export function createRealtimeProbe({ testAudio, cancelAudio }, {
         publish({ status: 'succeeded', playing: false, latencyMs: { ready: Math.round(times.ready), firstAudio: Math.round(times.firstAudio), total: Math.round(times.total) } });
       } catch (error) {
         if (!disposed && task === current) publish({ status: 'failed', playing: false,
-          message: Object.hasOwn(PROBE_ERRORS, error?.code) ? PROBE_ERRORS[error.code] : 'rtProbeFailed' });
+          message: Object.hasOwn(PROBE_ERRORS, error?.code) ? PROBE_ERRORS[error.code] : 'rtProbeFailed', code: probeFailureCode(error) });
       } finally {
         clearTimer(current.timer); if (task === current) task = null;
       }
@@ -272,7 +293,7 @@ export function RealtimeSettings({ t, useRealtimeSettings, saveSettings, describ
       <div role="status" aria-live="polite">
         {probe.status === 'running' && <p>{t('rtProbeWaiting')}</p>}
         {probe.status === 'succeeded' && <><p>{t('rtProbeSuccess', probe.latencyMs)}</p><p className="zj-subtle">{t('rtProbeScope')}</p></>}
-        {probe.message && <p>{t(probe.message)}</p>}
+        {probe.message && <p>{t(probe.message)}{probe.code && t('rtProbeCode', { code: probe.code })}</p>}
         {probe.playbackMessage && <p>{t(probe.playbackMessage)}</p>}
       </div>
     </form>

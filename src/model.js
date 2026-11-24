@@ -1,3 +1,17 @@
+/**
+ * The JSON object in a model's answer. Some models think aloud in <think> tags,
+ * wrap the object in a Markdown fence, or put a sentence before it; the object
+ * itself must still be complete, valid JSON.
+ */
+export function parseModelJson(raw) {
+  const body = String(raw).replace(/<think>[\s\S]*?<\/think>/giu, '').trim()
+    .replace(/^```(?:json)?\s*\n?/u, '').replace(/\n?```$/u, '').trim();
+  try { return JSON.parse(body); } catch { /* Look for the object inside surrounding prose. */ }
+  const start = body.indexOf('{'), end = body.lastIndexOf('}');
+  if (start >= 0 && end > start) { try { return JSON.parse(body.slice(start, end + 1)); } catch { /* Fall through to the stable failure. */ } }
+  throw Object.assign(new Error('模型未返回要求的结果格式，请重试。'), { code: 'MODEL_INVALID_JSON' });
+}
+
 /** All text generation uses the active DSH model; this module never reads credentials. */
 export function createModelGenerator(ctx, { timeoutMs = 180000, maxTokens = 12000, maxOutputChars = 500000 } = {}) {
   return async function generate({ task, system, input, signal, modelSelection }) {
@@ -31,9 +45,7 @@ export function createModelGenerator(ctx, { timeoutMs = 180000, maxTokens = 1200
     }
     combined.throwIfAborted();
     if (!finished) throw Object.assign(new Error('模型响应中断，未生成正式结果。'), { code: 'MODEL_INCOMPLETE' });
-    const body = text.trim().replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```$/, '').trim();
-    let result;
-    try { result = JSON.parse(body); } catch { throw Object.assign(new Error('模型未返回要求的结果格式，请重试。'), { code: 'MODEL_INVALID_JSON' }); }
+    const result = parseModelJson(text);
     if (!result || typeof result !== 'object' || Array.isArray(result)) throw Object.assign(new Error('模型结果不是有效对象。'), { code: 'MODEL_INVALID_JSON' });
     return { result, model: { provider: selection.provider, model: selection.model }, ...(usage ? { usage } : {}) };
     } catch (error) {

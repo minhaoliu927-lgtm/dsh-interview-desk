@@ -14,4 +14,4 @@ export const DOCUMENT_PARSE_TIMEOUT_MS = 30_000;
 export const DOCUMENT_PARSE_MEMORY_MB = 256;
 export const DOCUMENT_SCHEMA_VERSION = 'document-parse/v1' as const;
 export const DOCUMENT_PARSER_NAME = 'native-document-parser' as const;
-export const DOCUMENT_PARSER_VERSION = 'native-v1-g11.1' as const;
+export const DOCUMENT_PARSER_VERSION = 'native-v1-g12.0' as const;

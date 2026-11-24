@@ -473,7 +473,8 @@ test('scoped assessment, rewrite and interview use frozen evidence after goal ma
   assert.ok(!assessment.inputVersions.some(row => row.id === newJob.latestVersionId));
   for (const task of ['assessment.run', 'rewrite.run', 'interview.start']) {
     const call = observed.find(row => row.task === task);
-    assert.equal(call.input.snapshots.find(row => row.kind === 'job').id, job.latestVersionId);
+    // Scoring names its sources by short alias; the real binding is checked through inputVersions above.
+    assert.equal(call.input.snapshots.find(row => row.kind === 'job').id, task === 'assessment.run' ? 'J1' : job.latestVersionId);
     assert.equal(call.input.snapshots.find(row => row.kind === 'job').text, JOB);
   }
   assert.equal(started.goalSnapshot.title, '产品经理');

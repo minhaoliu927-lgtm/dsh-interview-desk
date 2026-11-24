@@ -4,6 +4,18 @@ import { PASS_SCORE, scoreSuggestions } from './score.js';
 
 const calm = () => Boolean(globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 
+/** Whole seconds since `active` turned true; null while it is false. */
+export function useElapsed(active, { now = Date.now, every = 1000 } = {}) {
+  const [seconds, setSeconds] = React.useState(active ? 0 : null);
+  React.useEffect(() => {
+    if (!active) { setSeconds(null); return undefined; }
+    const begin = now(); setSeconds(0);
+    const timer = setInterval(() => setSeconds(Math.floor((now() - begin) / 1000)), every);
+    return () => clearInterval(timer);
+  }, [active]);
+  return seconds;
+}
+
 /** The score rides the axis. The ring fills and the number counts up once per new total. */
 function Dial({ total, busy, t }) {
   const ring = React.useRef(null), number = React.useRef(null);
@@ -76,6 +88,7 @@ function EditPanel({ text, onChange, onSave, onClose, busy, t }) {
 export function ScorePanel({ t, busy, ready, score, previous, working, failure, panel, skipped,
   onScore, onRevise, onEdit, onSkip, onContinue, onPanel, onApply, onSave }) {
   const scoring = working === 'score';
+  const elapsed = useElapsed(scoring);
   const { total, status, pass } = score;
   const hints = status === 'scored' && !pass ? scoreSuggestions(score) : [];
   const delta = typeof total === 'number' && typeof previous === 'number' && previous !== total ? total - previous : null;
@@ -89,7 +102,8 @@ export function ScorePanel({ t, busy, ready, score, previous, working, failure, 
 
   let verdict;
   if (!ready) verdict = <p>{t('prepScoreWait')}</p>;
-  else if (scoring) verdict = <p role="status">{t('prepScoring')}</p>;
+  else if (scoring) verdict = <><p role="status">{t('prepScoring')}</p>
+    {elapsed !== null && elapsed >= 3 && <p className="zj-hint" aria-live="off">{t('prepScoringElapsed', { seconds: elapsed })}</p>}</>;
   else if (status === 'none' || status === 'partial') verdict = <>
     <p>{t('prepScoreIdle')}</p>
     <div className="zj-flow-actions"><Button primary disabled={busy} onClick={onScore}>{t('prepScoreRun')}</Button>

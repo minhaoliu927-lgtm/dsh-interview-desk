@@ -49,7 +49,7 @@ function Spark({ values, label }) {
   </svg>;
 }
 
-function Steps({ t, summary, voiceReady, voiceChecking }) {
+function Steps({ t, summary, voiceReady, voiceSaved = false, voiceChecking }) {
   const { progress, block } = summary, { score, value } = progress;
   const scoreText = !progress.ready ? t('deskScoreNone') : score.status === 'scored' ? `${score.total} / 100` : score.status === 'unknown' ? t('deskScoreUnknown') : t('deskScoreNone');
   const rows = [
@@ -57,7 +57,7 @@ function Steps({ t, summary, voiceReady, voiceChecking }) {
     { id: 'resume', title: t('deskRowResume'), done: progress.resumeReady, text: progress.resume ? progress.resume.material.title : t('prepMissing') },
     { id: 'score', title: t('deskRowScore'), done: progress.cleared, warn: progress.ready && !progress.cleared, text: progress.skipped && !score.pass ? `${scoreText} · ${t('prepSkipped')}` : scoreText },
     { id: 'voice', title: t('deskRowVoice'), done: value.mode === 'text' || voiceReady, warn: block === 'voice',
-      text: value.mode === 'text' ? t('deskVoiceText') : voiceChecking && !voiceReady ? t('deskVoiceChecking') : t(voiceReady ? 'deskVoiceReady' : 'deskVoiceNone') },
+      text: value.mode === 'text' ? t('deskVoiceText') : voiceChecking && !voiceReady ? t('deskVoiceChecking') : t(voiceReady ? 'deskVoiceReady' : voiceSaved ? 'deskVoiceUntested' : 'deskVoiceNone') },
   ];
   return <ol className="zj-home-steps">{rows.map((row, index) => <li key={row.id} className="zj-home-step" data-home-step={row.id}>
     <span className={`zj-step${row.done ? ' is-done' : row.warn ? ' is-warn' : ''}`} aria-hidden="true">{row.done ? <Check/> : index + 1}</span>
@@ -66,7 +66,7 @@ function Steps({ t, summary, voiceReady, voiceChecking }) {
 }
 
 /** The 首页: where the next interview stands, what happened so far, and a way into each page. */
-export function HomePage({ t, state, draft, voiceReady = false, voiceChecking = false, workspaceReady = false, nativeTitles = {}, busy = false,
+export function HomePage({ t, state, draft, voiceReady = false, voiceSaved = false, voiceChecking = false, workspaceReady = false, nativeTitles = {}, busy = false,
   onPrepare, onUseRole, onEnterRoom, onPage, onOpenSettings }) {
   const summary = homeSummary(state, draft, { voiceReady, workspaceReady });
   const { fresh, progress, block, sheet, interviews, done, reports, roles, unfinished } = summary;
@@ -88,7 +88,7 @@ export function HomePage({ t, state, draft, voiceReady = false, voiceChecking = 
       </li>)}</ol>
     </section>
     <section className={`zj-card zj-home-voice${voiceReady ? ' is-ok' : ''}`} {...nth(6)}>
-      <span className="zj-dot" aria-hidden="true"/><div><strong>{t('homeVoiceTitle')}</strong><p className="zj-hint">{t(voiceReady ? 'homeVoiceReady' : 'homeVoiceNone')}</p></div>
+      <span className="zj-dot" aria-hidden="true"/><div><strong>{t('homeVoiceTitle')}</strong><p className="zj-hint">{t(voiceReady ? 'homeVoiceReady' : voiceSaved ? 'homeVoiceUntested' : 'homeVoiceNone')}</p></div>
       <Button small onClick={() => onOpenSettings?.()}>{t(voiceReady ? 'deskSettingsShort' : 'deskConnect')}</Button>
     </section>
   </div>;
@@ -116,7 +116,7 @@ export function HomePage({ t, state, draft, voiceReady = false, voiceChecking = 
           {roles.length > 1 && <Button quiet onClick={() => onPrepare?.('job')}>{t('homeSwitchRole')}</Button>}
         </div>
       </div>
-      <Steps t={t} summary={summary} voiceReady={voiceReady} voiceChecking={voiceChecking}/>
+      <Steps t={t} summary={summary} voiceReady={voiceReady} voiceSaved={voiceSaved} voiceChecking={voiceChecking}/>
     </section>
 
     <div className="zj-stats">

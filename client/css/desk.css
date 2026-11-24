@@ -197,6 +197,14 @@ body[data-ds-dark-theme] .zj-desk { color-scheme: dark; }
 .zj-score-parts .is-quiet { opacity: 0.5; }
 .zj-desk .zj-doc { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 0.5px solid var(--d-line); border-radius: 14px; background: color-mix(in srgb, var(--d-hover) 50%, var(--d-card)); }
 .zj-desk .zj-doc .zj-badge { align-self: flex-start; }
+.zj-desk .zj-file-row { display: flex; align-items: center; gap: 12px; }
+.zj-desk .zj-file-badge { flex: none; display: grid; place-items: center; width: 40px; height: 48px; border-radius: 8px; border: 0.5px solid var(--d-line); background: var(--d-card); font-size: 10px; font-weight: 600; letter-spacing: 0.04em; color: var(--d-ink2); }
+.zj-desk .zj-file-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.zj-desk .zj-file-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zj-desk .zj-file-text { margin-top: 12px; }
+.zj-desk .zj-hint.is-warn { color: var(--d-warn); }
+.zj-desk .zj-file-text summary { cursor: pointer; font-size: 13px; color: var(--d-ink2); }
+.zj-desk .zj-file-text .zj-paper-content { margin-top: 8px; }
 .zj-desk .zj-doc-text { max-height: 320px; overflow: auto; white-space: pre-line; font-size: 13px; line-height: 22px; color: var(--d-ink2); }
 .zj-desk .zj-drop { min-height: 120px; border-radius: 16px; }
 

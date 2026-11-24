@@ -28,9 +28,9 @@ function fixture(t, options = {}) {
       end(input) { ends.push(input); interview.status = 'paused'; return interview; },
     } };
   const providerFactory = deps => {
-    const p = { deps, connections: [], audio: [], interrupts: 0, closes: 0, requested: 0,
+    const p = { deps, connections: [], audio: [], interrupts: 0, closes: 0, requested: 0, opened: 0,
       async connect(input) { p.connections.push(input); assert.equal(await deps.resolveCredential(config.credentialRef), 'fixture-secret');
-        p.emit({ type: 'ready', inputSampleRate: 16000, outputSampleRate: 24000 }); },
+        p.emit({ type: 'ready', inputSampleRate: 16000, outputSampleRate: 24000 }); if (input.opening === true) p.opened++; },
       emit(event) { const current = p.connections[0]; deps.onEvent({ sessionId: current.sessionId, epoch: current.epoch, turnId: 0, ...event }); },
       requestResponse() { p.requested++; }, appendAudio(input) { p.audio.push(input); return true; },
       cancelResponse() { p.interrupts++; p.emit({ type: 'interrupted', responseId: 'response-1', reason: 'user' }); },
@@ -49,8 +49,10 @@ function fixture(t, options = {}) {
     const pending = start(input, extras);
     // Observe failures immediately even while waiting for the synthetic ready event.
     pending.catch(() => {});
-    for (let i = 0; i < 40 && !providers.at(-1)?.requested; i++) await tick();
-    assert.equal(providers.at(-1)?.requested, 1, 'provider must be ready before greeting');
+    for (let i = 0; i < 40 && !providers.at(-1)?.opened; i++) await tick();
+    // The interviewer speaks first through the provider's manual opening; a VAD-mode response.create is refused by the service.
+    assert.equal(providers.at(-1)?.opened, 1, 'the call must ask the provider to open with the interviewer');
+    assert.equal(providers.at(-1)?.requested, 0, 'no separate reply request after connecting');
     await tick();
     return { pending, provider: providers.at(-1), callId: `call-${begins.length}` };
   };
@@ -241,12 +243,24 @@ test('official provider events integrate with real SQLite ledger, exact original
     for (let i = 0; i < 40 && !socket; i++) await tick(); assert.ok(socket);
     socket.event({ type: 'session.created', session: { id: 'vendor-session' } });
     socket.event({ type: 'session.updated', session: { id: 'vendor-session', model: config.model } });
-    await tick(); return { pending, socket };
+    await tick();
+    // The interviewer opens in manual mode: 0.2 s of silence is committed, then the reply is requested.
+    assert.equal(socket.sent[0].session.turn_detection, null);
+    assert.deepEqual(socket.sent.slice(1).map(event => event.type), ['input_audio_buffer.append', 'input_audio_buffer.commit']);
+    socket.event({ type: 'input_audio_buffer.committed', item_id: 'opening-silence' });
+    // Its (empty) transcript is not a candidate answer and must never reach the ledger.
+    socket.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'opening-silence', transcript: '' });
+    await tick(); assert.equal(socket.sent.filter(event => event.type === 'response.create').length, 1);
+    return { pending, socket };
   }
   const first = await start();
   first.socket.event({ type: 'response.created', response: { id: 'r1', status: 'in_progress' } });
   first.socket.event({ type: 'response.audio_transcript.done', response_id: 'r1', item_id: 'q1', transcript: '请说明你如何核对数据。' });
   first.socket.event({ type: 'response.done', response: { id: 'r1', status: 'completed' } });
+  // After the opening reply the call switches to server VAD; nothing was buffered, so nothing is cleared.
+  assert.deepEqual(first.socket.sent.at(-1), { type: 'session.update', session: { turn_detection: { type: 'server_vad', threshold: 0.5, silence_duration_ms: 800 } }, event_id: first.socket.sent.at(-1).event_id });
+  assert.equal(first.socket.sent.some(event => event.type === 'input_audio_buffer.clear'), false);
+  first.socket.event({ type: 'session.updated', session: { id: 'vendor-session', turn_detection: { type: 'server_vad' } } });
   await service.control({ callId: identity.callId, ownerId: 'page', action: 'audio', seq: 0, audioBase64: Buffer.alloc(3200).toString('base64') });
   first.socket.event({ type: 'input_audio_buffer.speech_started', item_id: 'u1' });
   first.socket.event({ type: 'input_audio_buffer.committed', item_id: 'u1' });
@@ -254,7 +268,7 @@ test('official provider events integrate with real SQLite ledger, exact original
   const pausingAgain = service.control({ callId: identity.callId, ownerId: 'page', action: 'pause' });
   await tick();
   assert.equal(first.socket.readyState, 1, 'the socket remains open for the last ASR final after the local microphone stops');
-  assert.equal(first.socket.sent.some(event => event.type === 'input_audio_buffer.commit'), false, 'already committed input needs no empty commit');
+  assert.equal(first.socket.sent.filter(event => event.type === 'input_audio_buffer.commit').length, 1, 'only the opening commit: already committed input needs no empty commit');
   await assert.rejects(service.control({ callId: identity.callId, ownerId: 'page', action: 'audio', seq: 1, audioBase64: 'AAA=' }), { code: 'realtime-not-ready' });
   first.socket.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'u1', transcript: '  我先检查重复记录，\r\n再核对缺失值。  ' });
   assert.equal((await pausing).reason, 'PAUSED'); assert.equal((await pausingAgain).reason, 'PAUSED'); await first.pending;
@@ -269,7 +283,7 @@ test('official provider events integrate with real SQLite ledger, exact original
   assert.equal(identity.epoch, 2); assert.equal(second.socket.sent[0].session.instructions.includes('我先检查重复记录'), true);
   first.socket.event({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'u1', transcript: 'late replacement' });
   await service.control({ callId: identity.callId, ownerId: 'page', action: 'end' }); await second.pending;
-  assert.equal(second.socket.sent.some(event => event.type === 'input_audio_buffer.commit'), false, 'a connection with no input must not commit');
+  assert.equal(second.socket.sent.filter(event => event.type === 'input_audio_buffer.commit').length, 1, 'only the opening commit: a connection with no input must not commit');
   state = (await career.dispatch('state')).interviews.find(row => row.id === interview.id);
   assert.equal(state.questions[0].answer.text.includes('late replacement'), false);
   const third = await start();

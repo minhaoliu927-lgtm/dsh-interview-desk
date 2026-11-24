@@ -1,5 +1,5 @@
 import React from 'react';
-import { createApi, saveDownload } from './api.js';
+import { createApi, openOriginalFile, saveDownload } from './api.js';
 import { createCareerClient } from './model.js';
 import { careerSessionProvider } from './session.js';
 import { interviewPrompt, submitNativePrompt } from './native-interview.js';
@@ -39,6 +39,7 @@ export function apply(ctx) {
     readSource: versionId => api.request('material.source', { versionId }),
     loadOriginal: api.original,
     async downloadOriginal(versionId) { saveDownload(await api.original(versionId)); },
+    openOriginal: versionId => openOriginalFile(api, versionId),
     openVoiceSettings: () => { const navigation = ctx.get('pluginNavigation'); navigation?.openBundle(DSH_VOICE_BUNDLE); return Boolean(navigation); },
     enableVoiceInput: ({ signal } = {}) => enableDshVoice({ getManager: () => ctx.get('remote.pluginManager'),
       openSettings: () => actions.openVoiceSettings(), signal }),

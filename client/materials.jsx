@@ -1,10 +1,10 @@
 import React from 'react';
-import { Button, Evaluation, Tabs } from './components.jsx';
+import { Button, Evaluation, hasOriginalFile, OriginalFile, Tabs } from './components.jsx';
 import { CopyText } from './desk-views.jsx';
 import { latestAssessment, versionEntry } from './model.js';
 import { selectedResumePassage } from './analysis.jsx';
 
-export function Materials({ state, t, busy, onAdd, onEdit, onConfirm, onExport, onAssess, selectedId, selectedVersionId, onSelect, onEvidence, onSource, onChatContext, studio = false }) {
+export function Materials({ state, t, busy, onAdd, onEdit, onConfirm, onExport, onAssess, selectedId, selectedVersionId, onSelect, onEvidence, onSource, onPreview, onChatContext, studio = false }) {
   const [chosenVersion, setChosenVersion] = React.useState(selectedVersionId ?? null);
   const [tab, setTab] = React.useState('deskDocument');
   React.useEffect(() => setTab('deskDocument'), [selectedId]);
@@ -13,6 +13,7 @@ export function Materials({ state, t, busy, onAdd, onEdit, onConfirm, onExport, 
   const material = state.materials.find(row => row.id === selectedId) || (!studio ? state.materials[0] : null);
   const version = material?.versions.find(row => row.id === chosenVersion) || material?.versions.find(row => row.id === material.latestVersionId) || material?.versions.at(-1);
   const passage = selectedResumePassage(version, selection);
+  const uploaded = hasOriginalFile(version);
   const rememberSelection = event => setSelection({ versionId: version.id, value: event.currentTarget.value, start: event.currentTarget.selectionStart, end: event.currentTarget.selectionEnd });
   return <div className="zj-body">{!studio && <div className="zj-page-heading"><div><h2>{t('personal')}</h2><p>{t('personalNote')}</p></div><Button primary onClick={onAdd}>{t('addMaterial')}</Button></div>}
     {!material ? <div className="zj-empty"><h2>{t('noMaterials')}</h2><p>{t('noMaterialsNote')}</p><Button onClick={onAdd}>{t('addMaterial')}</Button></div> : <div className={studio ? 'zj-material-studio' : 'zj-split'}>
@@ -20,9 +21,11 @@ export function Materials({ state, t, busy, onAdd, onEdit, onConfirm, onExport, 
         <span className="zj-subtle">{t(row.kind === 'company' ? 'companyMaterial' : row.kind)}</span><strong>{row.title}</strong><span className="zj-subtle">{t('version', { number: row.versions.length })}</span>
       </button>)}</div>}
       <div>{version && <><Tabs values={['deskDocument', ...(material.kind === 'resume' ? ['review'] : []), 'deskVersionsTab']} active={tab} onChange={setTab} t={t}/>{tab === 'deskVersionsTab' ? <section className="zj-card">{material.versions.map(row => <div className="zj-attach" key={row.id}><div><strong>{t('version', { number: row.revision })}</strong><span className="zj-subtle">{t(row.confirmed ? 'confirmed' : 'unconfirmed')} · {row.createdAt.slice(0, 10)}</span></div><Button small onClick={() => { setChosenVersion(row.id); setTab('deskDocument'); }}>{t('deskOpenResult')}</Button></div>)}</section> : tab === 'deskDocument' ? <article className="zj-paper"><header className="zj-paper-head"><h3>{material.title}</h3><span className={`zj-tag ${version.confirmed ? 'confirmed' : ''}`}>{t(version.confirmed ? 'confirmed' : 'unconfirmed')}</span>
-        <div className="zj-toolbar"><select className="zj-select" value={version.id} aria-label={t('savedVersion')} onChange={e => setChosenVersion(e.target.value)}>{material.versions.map(row => <option key={row.id} value={row.id}>{t('version', { number: row.revision })}</option>)}</select>{version.source?.metadataFileId && <Button small disabled={busy} onClick={() => onSource(version.id)}>{t('viewSource')}</Button>}<Button small onClick={() => onEdit(material, version)}>{t('edit')}</Button></div>
-      </header>{!version.confirmed && <div className="zj-review-note"><span>{t('reviewNote')}</span><Button primary small disabled={busy} onClick={() => onConfirm(version.id)}>{t('confirm')}</Button></div>}
-        <div className="zj-paper-content">{version.text}</div><div className="zj-context-actions"><CopyText text={version.text} t={t}/></div>
+        <div className="zj-toolbar"><select className="zj-select" value={version.id} aria-label={t('savedVersion')} onChange={e => setChosenVersion(e.target.value)}>{material.versions.map(row => <option key={row.id} value={row.id}>{t('version', { number: row.revision })}</option>)}</select>{version.source?.metadataFileId && !uploaded && <Button small disabled={busy} onClick={() => onSource(version.id)}>{t('viewSource')}</Button>}<Button small onClick={() => onEdit(material, version)}>{t('edit')}</Button></div>
+      </header>{!version.confirmed && <div className="zj-review-note"><span>{t(uploaded ? 'deskFileUnconfirmed' : 'reviewNote')}</span><Button primary small disabled={busy} onClick={() => onConfirm(version.id)}>{t(uploaded ? 'deskFileUse' : 'confirm')}</Button></div>}
+        {uploaded ? <><OriginalFile entry={{ material, version }} t={t} onPreview={onPreview}/>
+          <details className="zj-file-text"><summary>{t('deskFileText')}</summary><div className="zj-paper-content">{version.text}</div></details></>
+          : <div className="zj-paper-content">{version.text}</div>}<div className="zj-context-actions"><CopyText text={version.text} t={t}/></div>
         {onChatContext && <div className="zj-context-actions"><Button small disabled={busy || !version.confirmed} onClick={() => onChatContext(version.id)}>{t('askAboutMaterial')}</Button>
           <details><summary>{t('choosePassage')}</summary><label className="zj-subtle">{t('choosePassageNote')}<textarea readOnly rows={6} value={version.text.replace(/\r\n?/g, '\n')} onSelect={rememberSelection} onKeyUp={rememberSelection} onMouseUp={rememberSelection}/></label>
             <Button small disabled={busy || !version.confirmed || !passage} onClick={() => passage && onChatContext(version.id, passage)}>{t('askAboutPassage')}</Button></details>

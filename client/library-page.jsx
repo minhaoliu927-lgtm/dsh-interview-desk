@@ -40,12 +40,12 @@ function RoleDetail({ t, state, goal, busy, onAction, onExport, onEvidence, onRe
 }
 
 /** The 资料 page: resumes, job descriptions, other material and roles. Every item opens in place. */
-export function LibraryPage({ t, state, open, onOpen, onClose, busy, onAddMaterial, onEditMaterial, onConfirm, onExport, onAssess, onEvidence, onSource, onChatContext,
+export function LibraryPage({ t, state, open, onOpen, onClose, busy, onAddMaterial, onEditMaterial, onConfirm, onExport, onAssess, onEvidence, onSource, onPreview, onChatContext,
   onAction, onReviewVersion, onEditGoal, onLinkMaterial, onUseRole, drafts = {}, onDraft = () => {} }) {
   if (open?.kind === 'material') return <div className="zj-page" data-page="library">
     <div><Button quiet small onClick={onClose}>{t('libraryBack')}</Button></div>
     <Materials studio state={state} t={t} busy={busy} selectedId={open.id} selectedVersionId={open.versionId || null} onSelect={id => onOpen({ kind: 'material', id })}
-      onAdd={() => onAddMaterial('resume')} onEdit={onEditMaterial} onConfirm={onConfirm} onExport={onExport} onAssess={onAssess} onEvidence={onEvidence} onSource={onSource} onChatContext={onChatContext}/>
+      onAdd={() => onAddMaterial('resume')} onEdit={onEditMaterial} onConfirm={onConfirm} onExport={onExport} onAssess={onAssess} onEvidence={onEvidence} onSource={onSource} onPreview={onPreview} onChatContext={onChatContext}/>
   </div>;
   const goal = open?.kind === 'goal' ? state.goals.find(row => row.id === open.id) : null;
   if (goal) return <div className="zj-page" data-page="library">

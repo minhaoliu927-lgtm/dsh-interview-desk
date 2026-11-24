@@ -240,12 +240,13 @@ const assessmentResult = input => ({ result: { criteria: input.rubric.map(row =>
 
 test('real Host slow generation cancels only this client request and preserves an independent Agent task and prior analysis', async t => {
   let slow = false; const started = new Map();
+  // Scoring names sources by short alias (R1), so a run is told apart by its resume text.
+  const texts = ['负责测试设计与数据核对。', '维护项目文档和检查清单。'], versions = [];
   const services = await realHost(t, async ({ input, signal }) => {
     if (!slow) return assessmentResult(input);
-    const response = deferred(); started.set(input.snapshots[0].id, { signal, response, input }); return response.promise;
+    const response = deferred(); started.set(versions[texts.indexOf(input.snapshots[0].text)], { signal, response, input }); return response.promise;
   });
-  const versions = [];
-  for (const text of ['负责测试设计与数据核对。', '维护项目文档和检查清单。']) {
+  for (const text of texts) {
     const material = await services.dispatch('material.add', { title: '合成简历', kind: 'resume', text });
     await services.dispatch('material.confirm', { versionId: material.latestVersionId }); versions.push(material.latestVersionId);
   }

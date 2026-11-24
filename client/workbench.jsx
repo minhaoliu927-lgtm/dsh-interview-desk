@@ -31,7 +31,11 @@ const Gear = () => <svg width="17" height="17" viewBox="0 0 24 24" fill="none" s
 const Bubble = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>;
 const Close = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>;
 
-/** Whether the voice interview service is configured. Rechecked when the panel becomes visible again. */
+/**
+ * Voice interview status. `saved` means settings and a key are in place;
+ * `ready` means a test call with exactly those settings passed. Rechecked
+ * when the panel becomes visible again and after every test.
+ */
 export function useVoiceStatus(realtimeApi) {
   const [catalog, setCatalog] = React.useState(null), [checking, setChecking] = React.useState(false);
   const alive = React.useRef(true);
@@ -50,11 +54,15 @@ export function useVoiceStatus(realtimeApi) {
     view.addEventListener('visibilitychange', onVisible);
     return () => view.removeEventListener('visibilitychange', onVisible);
   }, [check]);
-  return { catalog, checking, check, ready: Boolean(catalog) && !realtimeUnavailable(catalog) };
+  const saved = Boolean(catalog) && !realtimeUnavailable(catalog);
+  const failed = saved && catalog.failed === true;
+  // The short reason the Host kept for the last failed test, so it survives closing Settings.
+  const failureCode = failed && typeof catalog.failureCode === 'string' ? catalog.failureCode : undefined;
+  return { catalog, checking, check, saved, failed, failureCode, ready: saved && catalog.verified === true };
 }
 
 export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, action, upload, refresh, cancelCurrent, retryCurrent, createConversation, startInterview, interviewAction, download,
-  voiceApi, realtimeApi, prepareChatDraft, enableVoiceInput, openVoiceSettings, openWorkspaceManager, readSource, loadOriginal, downloadOriginal, useResource, SessionProvider, renderSlot,
+  voiceApi, realtimeApi, prepareChatDraft, enableVoiceInput, openVoiceSettings, openWorkspaceManager, readSource, loadOriginal, downloadOriginal, openOriginal, useResource, SessionProvider, renderSlot,
   useRealtimeSettings, settingsActions = {}, initialPage }) {
   const snapshot = useCareer(value => value);
   const state = snapshot.data;
@@ -198,10 +206,22 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
   };
 
   const addMaterial = (kind = 'resume', goalId = null) => setModal({ kind: 'material', initialKind: kind, goalId });
+  // Text the user pasted, typed or uploaded is theirs and needs no proofreading, so it is confirmed
+  // on save; a page read from a link waits for review. Follow-ups run inside the same guarded
+  // operation: a second run() started from a success callback would be dropped by the guard.
+  const settleMaterial = async (saved, confirm) => {
+    const opened = currentModal.current;
+    if (!saved?.latestVersionId || !confirm) return saved;
+    // The material is saved either way; a failed follow-up is reported and leaves it to confirm by hand.
+    try {
+      if (!await action('material.confirm', { versionId: saved.latestVersionId })) return saved;
+      if (opened?.goalId) await action('goal.linkMaterial', { goalId: opened.goalId, versionId: saved.latestVersionId });
+    } catch (reason) { if (reason?.name !== 'AbortError') setError(reason); }
+    return saved;
+  };
   const materialSaved = material => {
     const opened = currentModal.current;
     saveDraft(materialKey(opened), undefined);
-    if (opened?.goalId && material?.latestVersionId) void perform('goal.linkMaterial', { goalId: opened.goalId, versionId: material.latestVersionId });
     if (currentModal.current === opened) { setModal(null); navigate({ type: 'open', page: 'library', target: { kind: 'material', id: material.id, versionId: material.latestVersionId } }); }
   };
   const confirmVersion = versionId => perform('material.confirm', { versionId });
@@ -235,7 +255,7 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
     {inRoom ? <div className="zj-top-space"/> : <><nav className="zj-tabs-nav" aria-label={t('navLabel')}>{DESK_PAGES.map(page => <button type="button" key={page} aria-current={nav.page === page ? 'page' : undefined}
       className={nav.page === page ? 'is-on' : ''} onClick={() => navigate({ type: 'page', page })}>{t(PAGE_LABELS[page])}</button>)}</nav><div className="zj-top-space"/></>}
     <button type="button" className={`zj-chip${voice.ready ? ' is-ok' : ''}`} title={t('voiceChipTitle')} onClick={openSettings}><span className="zj-dot" aria-hidden="true"/>
-      {t(voice.ready ? 'voiceChipReady' : voice.checking && !voice.catalog ? 'voiceChipChecking' : 'voiceChipNone')}</button>
+      {t(voice.ready ? 'voiceChipReady' : voice.checking && !voice.catalog ? 'voiceChipChecking' : voice.failed ? 'voiceChipFailed' : voice.saved ? 'voiceChipUntested' : 'voiceChipNone')}</button>
     <button type="button" className="zj-icon-btn is-glass" aria-label={t('openSettings')} title={t('openSettings')} onClick={openSettings}><Gear/></button>
     {(!inRoom || roomInterview?.mode === 'text') && <button type="button" className="zj-chip" aria-pressed={showDock} onClick={() => navigate({ type: 'dock' })}><Bubble/>{t('assistantToggle')}</button>}
     {inRoom && <Button small onClick={leaveRoom} title={t('roomBackTitle')}>{t('roomBack')}</Button>}
@@ -247,20 +267,20 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
     openRealtimeSettings={openSettings} onChanged={refresh} nativeChat={null} onEvidence={showEvidence}
     answerDraft={drafts[`answer:${roomInterview.id}:${roomInterview.currentQuestionId}`]} onAnswerDraftChange={value => saveDraft(`answer:${roomInterview.id}:${roomInterview.currentQuestionId}`, value)}/>
     : <div className="zj-page"><p className="zj-hint" role="status">{t('interviewWaiting')}</p></div>;
-  else if (nav.page === 'home') page = <HomePage t={t} state={state} draft={prepareDraft} busy={busy} voiceReady={voice.ready} voiceChecking={voice.checking}
+  else if (nav.page === 'home') page = <HomePage t={t} state={state} draft={prepareDraft} busy={busy} voiceReady={voice.ready} voiceSaved={voice.saved} voiceChecking={voice.checking}
     workspaceReady={Boolean(selectedWorkspace)} nativeTitles={nativeSessions.byId} onPrepare={sheet => navigate({ type: 'page', page: 'interview', sheet })}
     onUseRole={useRole} onEnterRoom={enterRoom} onPage={target => navigate({ type: 'page', page: target })} onOpenSettings={openSettings}/>;
   else if (nav.page === 'review') page = <ReviewPage t={t} state={state} nativeTitles={nativeSessions.byId} open={nav.open} onOpen={target => navigate({ type: 'open', target })} onClose={() => navigate({ type: 'close' })}
     onEnterRoom={enterRoom} busy={busy} onExport={exportFile} onEvidence={showEvidence} onAction={perform} onReviewVersion={reviewVersion} drafts={drafts} onDraft={saveDraft}/>;
   else if (nav.page === 'library') page = <LibraryPage t={t} state={state} open={nav.open} onOpen={target => navigate({ type: 'open', target })} onClose={() => navigate({ type: 'close' })} busy={busy}
     onAddMaterial={addMaterial} onEditMaterial={(material, version) => setModal({ kind: 'material', material, version })} onConfirm={confirmVersion} onExport={exportFile}
-    onAssess={id => perform('assessment.run', { kind: 'resume', versionId: id })} onEvidence={showEvidence} onSource={id => run(() => readSource(id), data => setModal({ kind: 'source', data }))}
+    onAssess={id => perform('assessment.run', { kind: 'resume', versionId: id })} onEvidence={showEvidence} onSource={id => run(() => readSource(id), data => setModal({ kind: 'source', data }))} onPreview={openOriginal}
     onChatContext={askContext} onAction={perform} onReviewVersion={reviewVersion} onEditGoal={goal => setModal({ kind: 'editGoal', goal })} onLinkMaterial={goal => setModal({ kind: 'linkMaterial', goalId: goal.id })}
     onUseRole={useRole} drafts={drafts} onDraft={saveDraft}/>;
   else page = <Prepare t={t} state={state} busy={busy} draft={prepareDraft} onDraftChange={value => saveDraft('prepare', value)}
-    action={perform} task={operation => run(() => operation(action))} upload={(file, metadata) => run(() => upload(file, metadata))} startInterview={startPrepared}
+    action={perform} task={operation => run(() => operation(action))} upload={(file, metadata) => run(() => upload(file, metadata))} openOriginal={openOriginal} startInterview={startPrepared}
     unfinished={unfinished} onContinue={enterRoom}
-    sheet={nav.sheet} onSheet={sheet => navigate({ type: 'sheet', sheet })} voiceReady={voice.ready} voiceChecking={voice.checking} workspaceReady={Boolean(selectedWorkspace)} onOpenSettings={openSettings}/>;
+    sheet={nav.sheet} onSheet={sheet => navigate({ type: 'sheet', sheet })} voiceReady={voice.ready} voiceSaved={voice.saved} voiceFailed={voice.failed} voiceFailureCode={voice.failureCode} voiceChecking={voice.checking} workspaceReady={Boolean(selectedWorkspace)} onOpenSettings={openSettings}/>;
 
   return <TaskCancelContext.Provider value={{ canCancel: Boolean(snapshot.operation?.canCancel), cancel: () => cancelCurrent?.(snapshot.operation?.requestId) }}>
     <div className={`zj zj-desk${narrow ? ' zj-narrow' : ''}${inRoom ? ' is-room' : ''}`} ref={rootRef} data-zhijing-workbench="" data-screen={inRoom ? 'room' : nav.page}>
@@ -290,8 +310,8 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
         {!inRoom && <div className="zj-suggestions">{['deskSuggestReview', 'deskSuggestPrepare'].map(key => <Button small quiet key={key} disabled={busy} onClick={() => prepareSuggestion(key)}>{t(key)}</Button>)}</div>}
       </aside>}
 
-      {nav.settings && <SettingsDialog t={t} onClose={() => navigate({ type: 'settings', open: false })} onSaved={options => { void voice.check(); if (!options?.quiet) say(t('setSaved')); }}
-        voiceReady={voice.ready} useRealtimeSettings={useRealtimeSettings} {...settingsActions}
+      {nav.settings && <SettingsDialog t={t} onClose={() => navigate({ type: 'settings', open: false })} onSaved={options => { void voice.check(); if (!options?.quiet) say(t('setSaved')); }} onTested={() => { void voice.check(); }}
+        voiceReady={voice.ready} voiceSaved={voice.saved} voiceFailed={voice.failed} voiceFailureCode={voice.failureCode} useRealtimeSettings={useRealtimeSettings} {...settingsActions}
         workspaces={workspaceChoices.items} workspaceId={selectedWorkspace?.workspaceId || ''} onWorkspace={id => { setWorkspaceId(id); setError(null); }} onManageWorkspaces={manageWorkspaces}
         enableVoiceInput={enableVoiceInput} openVoiceSettings={openVoiceSettings}/>}
       {toast && <div className="zj-toast" role="status" key={toast.key}><span>{toast.text}</span>
@@ -300,7 +320,8 @@ export function App({ t, useCareer, useNativeSessions, useWorkspaceChoices, acti
       {modal?.kind === 'editGoal' && <GoalForm t={t} busy={busy} saving={localPending > 0} editing draft={drafts[`goal:${modal.goal.id}`] || modal.goal} onDraftChange={value => saveDraft(`goal:${modal.goal.id}`, value)}
         onClose={() => setModal(null)} onSave={input => run(() => action('goal.update', { goalId: modal.goal.id, ...input }), () => { saveDraft(`goal:${modal.goal.id}`, undefined); setModal(null); })}/>}
       {modal?.kind === 'material' && <MaterialForm key={materialKey(modal)} t={t} busy={busy} saving={localPending > 0} {...modal} draft={drafts[materialKey(modal)]} onDraftChange={value => saveDraft(materialKey(modal), value)}
-        onClose={() => setModal(null)} onSave={(name, input) => run(() => action(name, input), materialSaved)} onUpload={(file, metadata) => run(() => upload(file, metadata), materialSaved)}/>}
+        onClose={() => setModal(null)} onSave={(name, input) => run(async () => settleMaterial(await action(name, input), name !== 'material.fetch'), materialSaved)}
+        onUpload={(file, metadata) => run(async () => settleMaterial(await upload(file, metadata), true), materialSaved)}/>}
       {modal?.kind === 'linkMaterial' && linkGoal && <MaterialPicker t={t} state={state} busy={busy} onClose={() => setModal(null)} onSelect={id => run(() => action('goal.linkMaterial', { goalId: linkGoal.id, versionId: id }), () => setModal(null))}/>}
       {modal?.kind === 'citation' && <Modal title={source?.title || t('evidence')} t={t} onClose={() => setModal(null)}>{source ? <>{source.revision && <p className="zj-subtle">{t('version', { number: source.revision })}</p>}
         <div className="zj-paper-content">{segments.before}{segments.quote && <mark>{segments.quote}</mark>}{segments.after}</div></> : <p className="zj-subtle">{t('unavailable')}</p>}</Modal>}

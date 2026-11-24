@@ -1,6 +1,6 @@
 import React from 'react';
 import { Button, Window, createSubmissionGuard } from './components.jsx';
-import { REALTIME_MODELS, createRealtimeProbe, realtimeSettingsValue } from './realtime-settings.jsx';
+import { REALTIME_MODELS, createRealtimeProbe, probeMessageFor, realtimeSettingsValue } from './realtime-settings.jsx';
 import { VoiceSetup } from './voice-ui.jsx';
 
 /**
@@ -58,7 +58,7 @@ export async function commitSettings({ ready, writable, base, draft, revision, k
   return { ok: true, savedSettings, savedKey: false };
 }
 
-export function SettingsDialog({ t, onClose, onSaved, voiceReady = false, useRealtimeSettings, saveSettings, describeCredential, storeCredential, testAudio, cancelAudio,
+export function SettingsDialog({ t, onClose, onSaved, onTested, voiceReady = false, voiceSaved = false, voiceFailed = false, voiceFailureCode, useRealtimeSettings, saveSettings, describeCredential, storeCredential, testAudio, cancelAudio,
   workspaces = [], workspaceId = '', onWorkspace, onManageWorkspaces, enableVoiceInput, openVoiceSettings }) {
   const snapshot = useSnapshot(useRealtimeSettings);
   const base = realtimeSettingsValue(snapshot.value);
@@ -69,11 +69,16 @@ export function SettingsDialog({ t, onClose, onSaved, voiceReady = false, useRea
   const [notice, setNotice] = React.useState(null), [saving, setSaving] = React.useState(false);
   const [probe, setProbe] = React.useState({ status: 'idle', playing: false });
   const probeRef = React.useRef(null), guard = React.useRef(createSubmissionGuard()), alive = React.useRef(true);
+  const onTestedRef = React.useRef(onTested); onTestedRef.current = onTested;
   const regionLabel = React.useId();
   React.useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   React.useEffect(() => {
     if (typeof testAudio !== 'function' || typeof cancelAudio !== 'function') return undefined;
-    const controller = createRealtimeProbe({ testAudio, cancelAudio }, { onChange: next => { if (alive.current) setProbe(next); } });
+    // A finished test changes whether voice counts as connected, so the status is read again.
+    const controller = createRealtimeProbe({ testAudio, cancelAudio }, { onChange: next => {
+      if (alive.current) setProbe(next);
+      if (next.status === 'succeeded' || next.status === 'failed') onTestedRef.current?.();
+    } });
     probeRef.current = controller;
     return () => { controller.dispose(); if (probeRef.current === controller) probeRef.current = null; };
   }, [testAudio, cancelAudio]);
@@ -89,7 +94,11 @@ export function SettingsDialog({ t, onClose, onSaved, voiceReady = false, useRea
   const { next } = settingsChanges(base, draft);
   const typed = key.trim();
   const keyWritable = writable && credential.status === 'ready' && credential.writable !== false;
-  const connected = voiceReady || probe.status === 'succeeded';
+  // Connected only once a test passed; a failed or pending test never counts.
+  const connected = probe.status === 'succeeded' || (voiceReady && probe.status !== 'failed' && !draft && !typed);
+  const pending = Boolean(draft || typed);
+  const status = connected ? 'setStatusOk' : probe.status === 'failed' || (voiceFailed && !pending && probe.status !== 'succeeded') ? 'setStatusFailed'
+    : voiceSaved || pending ? 'setStatusUntested' : 'setStatusNone';
   const edit = patch => {
     probeRef.current?.clear();
     if (!draft) setRevision(snapshot.revision);
@@ -128,7 +137,7 @@ export function SettingsDialog({ t, onClose, onSaved, voiceReady = false, useRea
   const footer = <><Button disabled={saving} onClick={onClose}>{t('cancel')}</Button><Button primary disabled={saving || !writable} onClick={() => { void save(); }}>{t(saving ? 'processing' : 'save')}</Button></>;
   return <Window title={t('setTitle')} onClose={onClose} t={t} busy={saving} footer={footer}>
     <section className="zj-set" aria-label={t('setVoice')} data-settings-voice="">
-      <div className="zj-set-head"><h3>{t('setVoice')}</h3><span className="zj-hint">{t('setVoiceVendor')}</span><span className={`zj-badge${connected ? '' : ' is-warn'}`}>{t(connected ? 'setStatusOk' : 'setStatusNone')}</span></div>
+      <div className="zj-set-head"><h3>{t('setVoice')}</h3><span className="zj-hint">{t('setVoiceVendor')}</span><span className={`zj-badge${connected ? '' : ' is-warn'}`}>{t(status)}</span></div>
       {!ready && <p className="zj-note" role="status">{t(snapshot.status === 'loading' ? 'loading' : 'rtSettingsUnavailable')}</p>}
       {ready && !writable && <p className="zj-note" role="status">{t('rtSettingsReadonly')}</p>}
       <div className="zj-control"><span className="zj-label" id={regionLabel}>{t('setRegion')}</span>
@@ -157,7 +166,9 @@ export function SettingsDialog({ t, onClose, onSaved, voiceReady = false, useRea
         {probe.status === 'succeeded' && <div className="zj-ok-line"><span>{t('rtProbeSuccess', probe.latencyMs)}</span>
           <Button small onClick={() => { if (probe.playing) probeRef.current?.stop(); else void probeRef.current?.play(); }}>{t(probe.playing ? 'setStop' : 'setPlay')}</Button></div>}
         {running && <p className="zj-hint">{t('rtProbeWaiting')}</p>}
-        {probe.message && probe.status !== 'succeeded' && <p className="zj-warn-line">{t(probe.message)}</p>}
+        {probe.message && probe.status !== 'succeeded' && <p className="zj-warn-line">{t(probe.message)}{probe.code && t('rtProbeCode', { code: probe.code })}</p>}
+        {!probe.message && !running && status === 'setStatusFailed' && voiceFailureCode && <p className="zj-warn-line">
+          {t('setLastFailure')}{t(probeMessageFor(voiceFailureCode))}{t('rtProbeCode', { code: voiceFailureCode })}</p>}
         {probe.playbackMessage && <p className="zj-warn-line">{t(probe.playbackMessage)}</p>}
         {notice && <p className="zj-warn-line">{t(notice)}</p>}
       </div>

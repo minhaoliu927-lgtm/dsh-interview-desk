@@ -94,6 +94,41 @@ export function FormFooter({ t, busy, disabled = false, onClose, submit = 'save'
   return <div className="zj-dialog-foot"><Button disabled={saving} onClick={onClose}>{t('cancel')}</Button><Button type="submit" primary disabled={busy || disabled}>{t(busy ? 'processing' : submit)}</Button></div>;
 }
 
+/** A version imported from a file the user uploaded (not pasted, edited or rewritten text). */
+export function hasOriginalFile(version) {
+  const source = version?.source;
+  return Boolean(source?.originalFileId && source?.metadataFileId && String(source.inputKind || '').startsWith('uploaded-'));
+}
+
+const FILE_KINDS = { 'application/pdf': ['PDF', 'deskFileKindPdf'], 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['DOCX', 'deskFileKindDocx'],
+  'image/png': ['PNG', 'deskFileKindImage'], 'image/jpeg': ['JPG', 'deskFileKindImage'], 'text/plain': ['TXT', 'deskFileKindText'] };
+
+/**
+ * The uploaded file itself, not the text read from it. Preview opens the
+ * original; it is a read, so it stays available while other work runs.
+ */
+export function OriginalFile({ entry, t, onPreview, children }) {
+  const { material, version } = entry;
+  const [state, setState] = React.useState('idle');
+  const alive = React.useRef(true);
+  React.useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const [badge, kind] = FILE_KINDS[version.source?.mime] || ['FILE', 'deskFileKindOther'];
+  const pages = Number.isInteger(version.source?.pageCount) && version.source.pageCount > 0 ? t('deskFilePages', { count: version.source.pageCount }) : null;
+  const preview = async () => {
+    if (!onPreview || state === 'opening') return;
+    setState('opening');
+    try { await onPreview(version.id); if (alive.current) setState('idle'); }
+    catch { if (alive.current) setState('failed'); }
+  };
+  return <div className={`zj-doc zj-file${version.confirmed ? ' is-confirmed' : ''}`} data-original-file="">
+    <div className="zj-file-row"><span className="zj-file-badge" aria-hidden="true">{badge}</span>
+      <div className="zj-file-name"><strong>{material.title}</strong><span className="zj-hint">{pages || t(kind)}</span></div>
+      {onPreview && <Button small onClick={() => { void preview(); }} disabled={state === 'opening'}>{t(state === 'opening' ? 'deskFileOpening' : 'deskFilePreview')}</Button>}</div>
+    {state === 'failed' && <p className="zj-hint is-warn" role="status">{t('deskFileOpenFailed')}</p>}
+    {children}
+  </div>;
+}
+
 // Lock synchronously: two clicks can arrive before React renders disabled controls.
 export function createSubmissionGuard() {
   let pending = false;

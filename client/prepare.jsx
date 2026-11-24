@@ -1,5 +1,5 @@
 import React from 'react';
-import { Button, Sheet } from './components.jsx';
+import { Button, hasOriginalFile, OriginalFile, Sheet } from './components.jsx';
 import { resumeOptions, versionEntry } from './model.js';
 import { ScorePanel } from './prepare-score.jsx';
 import { goalForJob, openRewrite, previousScore, resumeScore, rewriteInstructions } from './score.js';
@@ -67,13 +67,14 @@ const HEADS = { job: 'deskHeadJob', resume: 'deskHeadResume', score: 'deskHeadSc
 
 const EVIDENCE_FAILURES = new Set(['EVIDENCE_QUOTE_MISMATCH', 'EVIDENCE_RANGE_REQUIRED', 'EVIDENCE_REQUIRED', 'EVIDENCE_SOURCE_INVALID',
   'EVIDENCE_HASH_MISMATCH', 'INVALID_EVIDENCE', 'FIT_EVIDENCE_INCOMPLETE']);
-const FORMAT_FAILURES = new Set(['MODEL_INVALID_JSON', 'INVALID_MODEL_RESULT', 'RUBRIC_INCOMPLETE', 'INVALID_RATING', 'INVALID_TEXT', 'MODEL_INCOMPLETE']);
+const FORMAT_FAILURES = new Set(['MODEL_INVALID_JSON', 'INVALID_MODEL_RESULT', 'RUBRIC_INCOMPLETE', 'INVALID_RATING', 'INVALID_TEXT', 'MODEL_INCOMPLETE', 'MODEL_FAILED']);
 
 /** What went wrong in plain words, with the Host's code so a report can name it. */
 export function failureText(error, t) {
   const code = typeof error?.code === 'string' ? error.code : '';
   const words = code === 'MODEL_NOT_CONFIGURED' || code === 'MODEL_SELECTION_INVALID' ? t('prepFailModel')
     : code === 'MODEL_TIMEOUT' ? t('prepFailTimeout')
+      : code === 'MODEL_REQUEST_FAILED' ? t('prepFailRequest')
       : code === 'BUSY' || code === 'REQUEST_IN_PROGRESS' ? t('prepFailBusy')
         : EVIDENCE_FAILURES.has(code) ? t('prepFailEvidence')
           : FORMAT_FAILURES.has(code) ? t('prepFailFormat')
@@ -97,8 +98,14 @@ function Options({ label, values, value, onChange, render, disabled }) {
     aria-pressed={value === option} className={value === option ? 'is-on' : ''} disabled={disabled} onClick={() => onChange(option)}>{render(option)}</button>)}</div>;
 }
 
-function SavedDocument({ entry, t, busy, onConfirm, onReplace, onContinue }) {
+function SavedDocument({ entry, t, busy, onConfirm, onReplace, onContinue, onPreview }) {
   const { material, version } = entry;
+  // An uploaded file is shown as the file, with a preview of the original, never as the text read from it.
+  if (hasOriginalFile(version)) return <div className="zj-fade zj-stack">
+    <OriginalFile entry={entry} t={t} onPreview={onPreview}>{version.confirmed && <span className="zj-badge">{t('prepConfirmed')}</span>}</OriginalFile>
+    <div className="zj-flow-actions">{version.confirmed ? <Button primary onClick={onContinue}>{t('prepContinue')}</Button>
+      : <Button primary disabled={busy} onClick={onConfirm}>{t('deskFileUse')}</Button>}<Button quiet disabled={busy} onClick={onReplace}>{t('prepReplace')}</Button></div>
+  </div>;
   if (version.confirmed) return <div className="zj-fade zj-stack">
     <div className="zj-doc is-confirmed"><strong>{material.title}</strong><span className="zj-badge">{t('prepConfirmed')}</span><p className="zj-doc-text">{excerpt(version.text, 1200)}</p></div>
     <div className="zj-flow-actions"><Button primary disabled={busy} onClick={onContinue}>{t('prepContinue')}</Button><Button quiet disabled={busy} onClick={onReplace}>{t('prepReplace')}</Button></div>
@@ -110,8 +117,8 @@ function SavedDocument({ entry, t, busy, onConfirm, onReplace, onContinue }) {
   </div>;
 }
 
-export function Prepare({ t, state, busy = false, draft, onDraftChange, action, task, upload, startInterview,
-  sheet = null, onSheet = () => {}, voiceReady = false, voiceChecking = false, workspaceReady = false, onOpenSettings, unfinished = null, onContinue }) {
+export function Prepare({ t, state, busy = false, draft, onDraftChange, action, task, upload, openOriginal, startInterview,
+  sheet = null, onSheet = () => {}, voiceReady = false, voiceSaved = false, voiceFailed = false, voiceFailureCode, voiceChecking = false, workspaceReady = false, onOpenSettings, unfinished = null, onContinue }) {
   const progress = prepareProgress(state, draft);
   const { value, job, resume, role, jobReady, resumeReady, ready, goal, score, skipped, cleared } = progress;
   const latest = React.useRef(value); latest.current = value;
@@ -142,10 +149,14 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
       .sort((a, b) => b.version.revision - a.version.revision)[0];
     if (link) update({ role: row.title || '', goalId: row.id, jobVersionId: link.version.id, scoreSkippedFor: null });
   };
+  // The uploaded file is the user's own resume and stays one click away (preview), so it is used
+  // as is. Scoring starts at once when the job is ready; the sheet stays put to show the file.
   const importResume = async file => {
     if (!file || busy) return;
     const saved = await upload(file, { title: file.name, kind: 'resume' });
-    if (saved) update({ resumeVersionId: saved.latestVersionId });
+    if (!saved) return;
+    update({ resumeVersionId: saved.latestVersionId });
+    if (await action('material.confirm', { versionId: saved.latestVersionId }) && jobReady && role) scoreNow(saved.latestVersionId);
   };
   const saveResumeText = async () => {
     const saved = await action('material.add', { title: t('resume'), kind: 'resume', text: value.resumeText });
@@ -153,7 +164,10 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
     update({ resumeVersionId: saved.latestVersionId });
     if (await action('material.confirm', { versionId: saved.latestVersionId })) toScore(saved.latestVersionId);
   };
-  const confirmResume = async () => { if (await action('material.confirm', { versionId: resume.version.id })) toScore(resume.version.id); };
+  const confirmResume = async () => {
+    if (!await action('material.confirm', { versionId: resume.version.id })) return;
+    if (jobReady && role) toScore(resume.version.id); else onSheet('job');
+  };
   // The goal is made when scoring starts: the fit assessment reads the job through it.
   // A retry reuses the goal it already made, or one already linked to this job version.
   const ensureGoal = async act => {
@@ -251,8 +265,9 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
     { id: 'score', title: t('deskRowScore'), done: cleared, warn: ready && !cleared, primary: progress.current === 'score', disabled: !ready, value: scoreValue,
       action: score.status === 'none' || score.status === 'partial' ? 'deskScoreIt' : cleared ? 'deskView' : 'deskRevise', open: openScore },
     { id: 'voice', title: t('deskRowVoice'), done: value.mode === 'text' || voiceReady, warn: value.mode === 'realtime' && !voiceReady && !voiceChecking, primary: block === 'voice',
-      value: value.mode === 'text' ? t('deskVoiceText') : voiceChecking && !voiceReady ? t('deskVoiceChecking') : t(voiceReady ? 'deskVoiceReady' : 'deskVoiceNone'),
-      action: value.mode === 'text' || voiceReady ? 'deskSettingsShort' : 'deskConnect', open: () => onOpenSettings?.() },
+      value: value.mode === 'text' ? t('deskVoiceText') : voiceChecking && !voiceReady ? t('deskVoiceChecking') : voiceFailed && !voiceReady && voiceFailureCode ? t('deskVoiceFailedCode', { code: voiceFailureCode })
+        : t(voiceReady ? 'deskVoiceReady' : voiceFailed ? 'deskVoiceFailed' : voiceSaved ? 'deskVoiceUntested' : 'deskVoiceNone'),
+      action: value.mode === 'text' || voiceReady ? 'deskSettingsShort' : voiceSaved ? 'deskTestIt' : 'deskConnect', open: () => onOpenSettings?.() },
   ];
   const head = block === 'prep' ? HEADS[progress.current === 'resume' ? 'resume' : 'job'] : block ? HEADS[block] : 'deskHeadReady';
   const jobInputReady = role.length > 0 && (value.jobSource === 'paste' ? value.jobText.trim().length > 0 : value.jobUrl.trim().length > 0);
@@ -285,7 +300,7 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
         {block === 'score' && <div className="zj-note is-warn" role="status"><span>{typeof score.total === 'number' && score.status === 'scored' ? t('prepGateBelow', { score: score.total }) : t('prepGateNone')}</span>
           <Button small onClick={openScore}>{t('prepGateBack')}</Button>
           {score.status === 'scored' && <Button small quiet onClick={skipScore}>{t('prepSkipScore')}</Button>}</div>}
-        {block === 'voice' && <div className="zj-note is-warn" role="status"><span>{t('deskBlockedVoice')}</span>
+        {block === 'voice' && <div className="zj-note is-warn" role="status"><span>{t(voiceSaved ? 'deskBlockedVoiceTest' : 'deskBlockedVoice')}</span>
           <Button small onClick={() => onOpenSettings?.()}>{t('deskOpenSettings')}</Button><Button small quiet onClick={() => update({ mode: 'text' })}>{t('deskUseText')}</Button></div>}
         {block === 'workspace' && <div className="zj-note is-warn" role="status"><span>{t('deskBlockedWorkspace')}</span>
           <Button small onClick={() => onOpenSettings?.()}>{t('deskOpenSettings')}</Button></div>}
@@ -302,7 +317,7 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
           <select className="zj-input" value="" disabled={busy} onChange={event => { if (event.target.value) pickRole(event.target.value); }}>
             <option value="">{t('selectPlaceholder')}</option>{otherRoles.map(row => <option key={row.id} value={row.id}>{row.title}</option>)}</select></label>}
         {job ? <>
-          <SavedDocument entry={job} t={t} busy={busy} onConfirm={() => { void confirmJob(); }} onReplace={() => update({ jobVersionId: null })} onContinue={afterJob}/>
+          <SavedDocument entry={job} t={t} busy={busy} onConfirm={() => { void confirmJob(); }} onReplace={() => update({ jobVersionId: null })} onContinue={afterJob} onPreview={openOriginal}/>
           <div><Button quiet small disabled={busy} onClick={() => update({ role: '', goalId: null, jobVersionId: null, jobText: '', jobUrl: '', scoreSkippedFor: null })}>{t('deskNewRole')}</Button></div>
         </> : <form className="zj-stack" onSubmit={event => { event.preventDefault(); if (!busy && jobInputReady) void (value.jobSource === 'paste' ? saveJobText() : readJobLink()); }}>
           <p className="zj-hint">{t('prepTheirsNote')}</p>
@@ -321,7 +336,7 @@ export function Prepare({ t, state, busy = false, draft, onDraftChange, action, 
     {sheet === 'resume' && <Sheet title={t('deskRowResume')} t={t} onClose={() => onSheet(null)}>
       <div className="zj-stack">
         {resume ? <SavedDocument entry={resume} t={t} busy={busy} onConfirm={() => { void confirmResume(); }} onReplace={() => update({ resumeVersionId: null })}
-          onContinue={() => { if (ready) openScore(); else onSheet(jobReady && role ? null : 'job'); }}/>
+          onPreview={openOriginal} onContinue={() => { if (ready) openScore(); else onSheet(jobReady && role ? null : 'job'); }}/>
           : value.resumeSource === 'file' ? <>
             <p className="zj-hint">{t('prepYoursNote')}</p>
             <label className={`zj-drop${dragging ? ' is-over' : ''}${busy ? ' is-disabled' : ''}`}

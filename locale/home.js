@@ -15,7 +15,7 @@ export const zhHome = {
   homeRecent: '最近的面试', homeAllReview: '全部复盘', homeRoles: '你的岗位', homeAllLibrary: '全部资料',
   homeRolePrepare: '准备这一场', homeRoleCurrent: '正在准备', homeRoleInterviews: '面过 {count} 场', homeRoleNever: '还没面过',
   homeRoleScore: '简历 {score} 分', homeTrend: '最近 {count} 场的分数',
-  homeVoiceTitle: '语音面试', homeVoiceReady: '百炼实时语音已接入。', homeVoiceNone: '要用语音面，先在设置里填百炼的业务空间 ID 和 API Key。也可以先用文字面。',
+  homeVoiceTitle: '语音面试', homeVoiceReady: '百炼实时语音已接入。', homeVoiceUntested: '语音设置已填好，还没测试通过。在设置里点一次“测试”。', homeVoiceNone: '要用语音面，先在设置里填百炼的业务空间 ID 和 API Key。也可以先用文字面。',
 };
 
 export const enHome = {
@@ -34,5 +34,5 @@ export const enHome = {
   homeRecent: 'Recent interviews', homeAllReview: 'All of Review', homeRoles: 'Your roles', homeAllLibrary: 'All of Library',
   homeRolePrepare: 'Prepare this one', homeRoleCurrent: 'Preparing', homeRoleInterviews: '{count} interviews', homeRoleNever: 'Not interviewed yet',
   homeRoleScore: 'resume {score}', homeTrend: 'Scores of the last {count} interviews',
-  homeVoiceTitle: 'Voice interviews', homeVoiceReady: 'Model Studio realtime voice is set up.', homeVoiceNone: 'For voice, add your Model Studio workspace ID and API key in Settings. A text interview works without it.',
+  homeVoiceTitle: 'Voice interviews', homeVoiceReady: 'Model Studio realtime voice is set up.', homeVoiceUntested: 'Voice settings are saved but have not passed a test. Press Test in Settings once.', homeVoiceNone: 'For voice, add your Model Studio workspace ID and API key in Settings. A text interview works without it.',
 };

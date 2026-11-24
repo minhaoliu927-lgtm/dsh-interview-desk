@@ -87,4 +87,25 @@ test('without the host form the window says so and cannot save; a read-only form
   assert.ok(readonly.includes(en.rtSettingsReadonly));
   const connected = renderToStaticMarkup(React.createElement(SettingsDialog, { t, onClose() {}, voiceReady: true, useRealtimeSettings: ready({ ...base, realtimeEnabled: true, realtimeWorkspace: 'llm-abc' }) }));
   assert.ok(connected.includes(en.setStatusOk)); assert.ok(connected.includes('value="llm-abc"'));
+  // Saved but not yet passing a test is its own state, never "set up".
+  const untested = renderToStaticMarkup(React.createElement(SettingsDialog, { t, onClose() {}, voiceReady: false, voiceSaved: true, useRealtimeSettings: ready({ ...base, realtimeEnabled: true, realtimeWorkspace: 'llm-abc' }) }));
+  assert.ok(untested.includes(en.setStatusUntested)); assert.equal(untested.includes(`>${en.setStatusOk}<`), false);
+});
+
+test('a failed test keeps its reason after Settings is closed: reopening shows the sentence and the short code', () => {
+  for (const dictionary of [zh, en]) {
+    const t = translate(dictionary);
+    const html = renderToStaticMarkup(React.createElement(SettingsDialog, { t, onClose() {}, voiceSaved: true, voiceFailed: true,
+      voiceFailureCode: 'provider-error · invalid_value', useRealtimeSettings: ready({ ...base, realtimeEnabled: true, realtimeWorkspace: 'ws-abc' }) }));
+    assert.ok(html.includes(dictionary.setStatusFailed));
+    assert.ok(html.includes(dictionary.setLastFailure + dictionary.rtProbeRejected), 'the sentence for provider-error');
+    assert.ok(html.includes(t('rtProbeCode', { code: 'provider-error · invalid_value' })));
+    // Without a kept code the window stays as before, and a passing state shows no old failure.
+    const bare = renderToStaticMarkup(React.createElement(SettingsDialog, { t, onClose() {}, voiceSaved: true, voiceFailed: true,
+      useRealtimeSettings: ready({ ...base, realtimeEnabled: true, realtimeWorkspace: 'ws-abc' }) }));
+    assert.equal(bare.includes(dictionary.setLastFailure), false);
+    const passed = renderToStaticMarkup(React.createElement(SettingsDialog, { t, onClose() {}, voiceReady: true, voiceSaved: true,
+      voiceFailureCode: 'provider-error', useRealtimeSettings: ready({ ...base, realtimeEnabled: true, realtimeWorkspace: 'ws-abc' }) }));
+    assert.equal(passed.includes(dictionary.setLastFailure), false);
+  }
 });

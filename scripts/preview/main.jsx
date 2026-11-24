@@ -35,6 +35,7 @@ const props = {
   startInterview: input => client.action('realtime.create', input),
   interviewAction: async () => undefined,
   download: async () => undefined, readSource: async () => ({}), loadOriginal: async () => ({}), downloadOriginal: async () => undefined,
+  openOriginal: versionId => host.api.request('material.open', { versionId }),
   useResource: () => ({ status: 'failed', failure: { message: '预览环境没有 DSH 原生对话。' } }),
   SessionProvider: ({ children }) => children, renderSlot: () => null,
   useRealtimeSettings, settingsActions: { saveSettings: settings.saveSettings, describeCredential: settings.describeCredential, storeCredential: settings.storeCredential, testAudio: settings.testAudio, cancelAudio: settings.cancelAudio },
