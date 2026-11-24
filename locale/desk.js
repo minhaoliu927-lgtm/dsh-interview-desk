@@ -1,6 +1,6 @@
 export const zhDesk = {
   deskOpenWorkbench: '打开职镜AI工作台', deskSidebarNote: '在 DSH 主工作区打开完整工作台，继续使用原生对话。',
-  deskSuggestReview: '帮我检查已有经历的表达', deskSuggestPrepare: '帮我整理接下来的准备步骤',
+  deskSuggestReview: '我简历里哪段经历写得不够清楚？', deskSuggestPrepare: '下一场面试，我该先准备什么？',
   deskLayout_board: '看板', deskReportTrend: '最近面试成绩', deskTrendNote: '按完成时间显示最近十二份报告。岗位和资料不同的成绩仅作回看。',
   deskNavigation: '工作台导航', deskReports: '报告', deskBack: '返回列表', deskPrevious: '上一个对象', deskNext: '下一个对象', deskFocus: '专注结果', deskSplit: '并排查看',
   deskIntro_home: '从一个问题开始，和助手一起整理下一步。', deskIntro_personal: '整理简历和经历。每个已保存版本都会保留。', deskIntro_goals: '按目标岗位整理资料、对话和面试。', deskIntro_interviews: '继续练习，或回看已完成的模拟面试。', deskIntro_reports: '查看简历分析、岗位适配、改写建议和面试报告。',
@@ -11,7 +11,7 @@ export const zhDesk = {
 };
 export const enDesk = {
   deskOpenWorkbench: 'Open Zhijing AI workbench', deskSidebarNote: 'Open the full workbench in the DSH main area with native conversations.',
-  deskSuggestReview: 'Help me review how I describe my experience', deskSuggestPrepare: 'Help me plan my next preparation steps',
+  deskSuggestReview: 'Which part of my resume is unclear?', deskSuggestPrepare: 'What should I prepare first for my next interview?',
   deskLayout_board: 'Board', deskReportTrend: 'Recent interview scores', deskTrendNote: 'The latest twelve saved reports, by completion time. Scores for different roles and materials are for review only.',
   deskNavigation: 'Workbench navigation', deskReports: 'Reports', deskBack: 'Back to list', deskPrevious: 'Previous item', deskNext: 'Next item', deskFocus: 'Focus result', deskSplit: 'Side by side',
   deskIntro_home: 'Start with a question and prepare your next step with the assistant.', deskIntro_personal: 'Organize resumes and experience. Every saved version is retained.', deskIntro_goals: 'Keep materials, conversations, and practice together for each role.', deskIntro_interviews: 'Continue practice or revisit completed mock interviews.', deskIntro_reports: 'Review resume analysis, role fit, revisions, and interview reports.',

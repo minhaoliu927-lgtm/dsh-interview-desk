@@ -1,10 +1,20 @@
 {
   "schemaVersion": 1,
   "name": "dsh-interview-desk",
-  "version": "0.1.0-dev.13",
+  "version": "0.2.0",
   "license": "MIT",
-  "inventorySha256": "2da5aca14ff105e6557cf34de9873916c07f61bc51100a326a66695552ae84f2",
+  "inventorySha256": "0dde04a52994f931e9e36947044b0663d3223922236105de7d25077458559b76",
   "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "bytes": 1074,
+      "sha256": "0ba4b00a0ee11f9459f5717f45868c83c09f7602d50c352523606c2d9e758e45"
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "bytes": 6272,
+      "sha256": "d01ff407c4b1851f7928feed649fdb36a40ce14a55812041c0fd84ee4f5464d2"
+    },
     {
       "path": ".gitignore",
       "bytes": 148,
@@ -22,8 +32,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 19093,
-      "sha256": "4b75cf14d98aedb3709673bd1eb6348d4feb6d8dacc0c0c67f3ba18145527a33"
+      "bytes": 11240,
+      "sha256": "c5a9473aa117d158fb600b135bbb1dd2871530decfd99efe49262cb682169a40"
     },
     {
       "path": "THIRD_PARTY_NOTICES.md",
@@ -272,43 +282,43 @@
     },
     {
       "path": "locale/desk.js",
-      "bytes": 5008,
-      "sha256": "ed35a9c9c892cfddd50ace58a981311144dd14792d3f40c7058babd0d138b061"
+      "bytes": 5030,
+      "sha256": "c4abcbd17a78625facc7cd7120e1cf57d21331ce8417a0ee2be01937476e9c19"
     },
     {
       "path": "locale/desk10.js",
-      "bytes": 10922,
-      "sha256": "04832f5313ed75393c84e5cc4a9fe4725533fa1d2086899670ae314870e2c587"
+      "bytes": 10716,
+      "sha256": "ef3f422cfdc1d25423b209c3f75d12a3a5561a33db9934885b7954265d066af6"
     },
     {
       "path": "locale/dictionaries.js",
-      "bytes": 37562,
-      "sha256": "1315b8a60f4d2aabaddd343dbf4da0fdb8219e88e7048e03ff21f5556cb4225a"
+      "bytes": 37075,
+      "sha256": "60a4830203bfa05d09ec66eca070753904b00e19f729cf1ce60b18f33c2d5549"
     },
     {
       "path": "locale/en.json",
-      "bytes": 196,
-      "sha256": "e6fcd0fb4bee0e43e5d03e5f08242a05c500f8bec063efc375b8c1289567e334"
+      "bytes": 179,
+      "sha256": "bf035a5e010ede300f5df22ceccbf700154d06e2af2c336ac140b3d3108579d9"
     },
     {
       "path": "locale/home.js",
-      "bytes": 3884,
-      "sha256": "87df85c86e95b58799fcf4a35a074158fdaad554ddfdcae1a8299337046f42c2"
+      "bytes": 3923,
+      "sha256": "25e4cd2aaf68a86c04f95b5f27fa329f9a6c348577e6db9a4cba88d7ee5d6049"
     },
     {
       "path": "locale/prepare.js",
-      "bytes": 11049,
-      "sha256": "9ea8355e9815734eb36b3cd7d087d2ac5aafd5241c3552e2e9c8a6cef8b2f6d1"
+      "bytes": 10839,
+      "sha256": "515a748a5289066028c237483cb95af66d68fa91a42b3ab23f3e6451feac5559"
     },
     {
       "path": "locale/zh.json",
-      "bytes": 187,
-      "sha256": "5b8d5d69fee23abbb4ac958308a06a6c970a32ae800b0eb9638568796264a3c2"
+      "bytes": 157,
+      "sha256": "55382296c776d22a8d9b77aa21f50dd0ae257473607322f9c5a535dbb75dda2f"
     },
     {
       "path": "package.json",
-      "bytes": 1888,
-      "sha256": "611f3e90007149b8bdb99820937c14ea318bb19e3d4a823af9040cfa5cd350e8"
+      "bytes": 1911,
+      "sha256": "77ab80f8a6762e3e143f117c5fb2ed5b3dcd6e4c75dc8f831c7424006ef040b5"
     },
     {
       "path": "pnpm-lock.yaml",
@@ -337,8 +347,8 @@
     },
     {
       "path": "scripts/prepare-source.mjs",
-      "bytes": 7760,
-      "sha256": "b199de69668e715e4d3c99fb5a87fe87f5987074b24222a70cdc7cf7f50c369f"
+      "bytes": 8099,
+      "sha256": "ad5237531547b5cc4f29564f74800bad69b572f52e028a8aa0ab3409dc3adbd0"
     },
     {
       "path": "scripts/preview/build.mjs",
@@ -362,8 +372,8 @@
     },
     {
       "path": "scripts/update-index.mjs",
-      "bytes": 2741,
-      "sha256": "6c11490520bdbb8d7927ef9a436cacd429bc7eeb81dcc4df4ab976695173f60d"
+      "bytes": 2841,
+      "sha256": "bb874b07682fc18db27cdf65f8590edab9ceef5e2a26dc58e2a485f3ee4e54cd"
     },
     {
       "path": "scripts/vendor-parser.mjs",
@@ -782,8 +792,8 @@
     },
     {
       "path": "test/update-index.test.js",
-      "bytes": 2291,
-      "sha256": "c4cde8911c568cd505d7c3ac4b0ab61002aeba9f4e4ebb35dfc81282e4229287"
+      "bytes": 1871,
+      "sha256": "d437ed8a5f5cb3c5ccf78046e91d95610fde5351070d1b0715561cbb1e5d4308"
     },
     {
       "path": "test/voice-controller.test.js",

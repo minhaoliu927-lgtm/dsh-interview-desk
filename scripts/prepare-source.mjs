@@ -6,7 +6,9 @@ import { auditText, validatePackedPath } from './audit-package.mjs';
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const manifestName = 'PUBLIC_SOURCE_MANIFEST.json';
-const directories = ['src', 'client', 'scripts', 'test', 'skills', 'locale', 'assets'];
+const directories = ['src', 'client', 'scripts', 'test', 'skills', 'locale', 'assets', '.github'];
+// GitHub Actions workflows are reviewed source; nothing else under .github is published.
+const workflowFile = /^\.github\/workflows\/[a-z0-9-]+\.yml$/;
 const rootFiles = ['.gitignore', '.npmignore', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'cordis.patch.yml', 'index.json', 'icon.svg', 'LICENSE', 'README.md', 'THIRD_PARTY_NOTICES.md'];
 const assetHashes = {
   'assets/brand/logo-black.svg': 'd7c88cc217272f60d339db40826d7ed1272e298c606c493e13d016645d7b306f',
@@ -22,6 +24,7 @@ function permitted(name) {
   validatePackedPath(name);
   if (name === 'src/materials/runtime' || name.startsWith('src/materials/runtime/')) fail('GENERATED_SOURCE_FILE', name);
   if (rootFiles.includes(name)) return;
+  if (name.startsWith('.github/')) { if (workflowFile.test(name)) return; fail('UNREVIEWED_SOURCE_FILE', name); }
   // Shell helpers are reviewed source only under scripts/ (local setup, never packed into the plugin).
   if (/^scripts\/[^/]+\.sh$/.test(name)) return;
   if (!directories.includes(name.split('/')[0]) || !/\.(?:[cm]?js|jsx|ts|tsx|json|md|ya?ml|svg|css|ps1|cs|otf|txt)$/.test(name)) fail('UNREVIEWED_SOURCE_FILE', name);
@@ -104,7 +107,7 @@ export async function verifySource(directory) {
   const inventory = [];
   for (const name of files) inventory.push((await record(root, name)).entry);
   if (JSON.stringify(inventory) !== JSON.stringify(manifest.files) || hash(JSON.stringify(inventory)) !== manifest.inventorySha256) fail('SOURCE_HASH_MISMATCH', 'A source file has changed');
-  for (const name of [...rootFiles, ...Object.keys(assetHashes), 'client/index.jsx', 'scripts/build.mjs', 'scripts/vendor-parser.mjs', 'src/host.js']) {
+  for (const name of [...rootFiles, ...Object.keys(assetHashes), 'client/index.jsx', 'scripts/build.mjs', 'scripts/vendor-parser.mjs', 'src/host.js', '.github/workflows/ci.yml', '.github/workflows/release.yml']) {
     if (!files.includes(name)) fail('SOURCE_REQUIRED_FILE', name);
   }
   return { name: manifest.name, version: manifest.version, fileCount: files.length, bytes: inventory.reduce((sum, row) => sum + row.bytes, 0), inventorySha256: manifest.inventorySha256 };

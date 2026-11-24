@@ -1,0 +1,51 @@
+# 每次推送和 PR：装依赖、构建、跑测试、检查安装包、打出 .tgz。
+# 只检查，不发布。发布见 release.yml。
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 核对字体
+        run: node scripts/fetch-font.mjs --verify-only
+
+      - name: 构建
+        run: pnpm run build
+
+      - name: 测试
+        run: node --test test/*.test.js
+
+      - name: 检查安装包
+        run: node scripts/audit-package.mjs
+
+      - name: 打包
+        run: |
+          mkdir -p release
+          npm pack --ignore-scripts --pack-destination release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: release/*.tgz
+          retention-days: 14

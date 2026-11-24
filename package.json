@@ -1,7 +1,7 @@
 {
   "name": "dsh-interview-desk",
-  "version": "0.1.0-dev.13",
-  "description": "DSH 原生求职工作台：个人资料、简历分析与修改、文字和语音模拟面试。",
+  "version": "0.2.0",
+  "description": "职镜AI：贴上岗位要求和简历，评分、改简历，再用语音或文字模拟面一场。DeepSeek Harness 插件。",
   "type": "module",
   "license": "MIT",
   "main": "src/host.js",
