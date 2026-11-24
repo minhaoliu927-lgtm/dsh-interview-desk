@@ -11,6 +11,8 @@ import { createRealtimeService } from './voice/realtime-service.js';
 import { createRealtimeProbe } from './voice/realtime-probe.js';
 import { createNativeSessionRecorder } from './voice/native-session.js';
 import { realtimeConfig, realtimeCatalog } from './voice/config.js';
+import { createVoiceVerification, failureCode } from './voice/verification.js';
+import { providerErrorCode } from './voice/realtime-provider.js';
 export { Config } from './voice/config.js';
 
 export const name = 'dsh-interview-desk';
@@ -47,7 +49,7 @@ export function publicError(error, aborted = false) {
     && /^[A-Z]+_[A-Z_]+$/.test(error.code) && !/^(ERR|SQLITE|UV)_/.test(error.code));
   return business
     ? { status: Number.isInteger(error.status) && error.status >= 400 && error.status <= 599 ? error.status : 400,
-        code: error.code, message: error.message }
+        code: error.code, message: error.message, ...(error?.name === 'RealtimeError' && providerErrorCode(error.detail) ? { detail: error.detail } : {}) }
     : { status: 500, code: 'OPERATION_FAILED', message: '操作未完成，请重试或检查 DSH 设置。' };
 }
 /** Create plugin services independently of HTTP for real host and integration tests. */
@@ -73,6 +75,9 @@ export function createHostServices(ctx, directory, options = {}) {
   };
   const realtime = createRealtimeService({ career, createRecorder, ...realtimeOptions });
   const realtimeProbe = createRealtimeProbe({ ...realtimeOptions, ...options.realtimeProbe });
+  // "Voice connected" means a test call with the current settings worked.
+  const voiceCheck = createVoiceVerification({ directory, settings: realtimeOptions.getConfig,
+    describe: async ref => ctx.get('credentials')?.describe?.(ref) });
   const active = new Map(), pending = new Set(); let closed = false, materialsPromise, closing;
   const getMaterials = () => materialsPromise ??= import('./materials/index.js').then(module => module.createMaterialImporter({ directory, career }));
   const execute = async (action, input = {}, options = {}) => {
@@ -86,8 +91,23 @@ export function createHostServices(ctx, directory, options = {}) {
     try {
       signal.throwIfAborted();
       if (action === 'voice.catalog') return await voice.catalog();
-      if (action === 'realtime.catalog') return await realtimeCatalog(ctx, config, realtimeAvailable());
-      if (action === 'realtime.test') return await realtimeProbe.test(input, { signal });
+      if (action === 'realtime.catalog') {
+        const catalog = await realtimeCatalog(ctx, config, realtimeAvailable());
+        return { ...catalog, ...(catalog.configured ? await voiceCheck.status() : { verified: false }) };
+      }
+      if (action === 'realtime.test') {
+        // Remember the settings as they were when the test began; a change during it no longer matches.
+        const tested = await voiceCheck.fingerprint();
+        try {
+          const result = await realtimeProbe.test(input, { signal });
+          await voiceCheck.record(tested);
+          return result;
+        } catch (error) {
+          if (!['cancelled', 'BUSY', 'invalid-probe-input'].includes(error?.code) && !signal.aborted) await voiceCheck.fail(tested, failureCode(error)).catch(() => {});
+          throw error;
+        }
+      }
+      if (action === 'realtime.forget') { await voiceCheck.forget(); return { verified: false }; }
       if (action === 'realtime.create') {
         if (!realtimeAvailable()) throw fail('REALTIME_HOST_UNAVAILABLE', '当前 DSH 缺少实时面试所需的会话服务。');
         const workspace = ctx.get('workspaceRegistry').get(input.workspaceId);
@@ -120,6 +140,7 @@ export function createHostServices(ctx, directory, options = {}) {
       if (action === 'material.upload') return await (await getMaterials()).upload(input, { signal });
       if (action === 'material.fetch') return await (await getMaterials()).fetchUrl(input, { signal });
       if (action === 'material.source') return await (await getMaterials()).getSource(input);
+      if (action === 'material.open') return await (await getMaterials()).openOriginal(input, { signal });
       if (action === 'material.original') {
         const result = await (await getMaterials()).getOriginal(input);
         signal.throwIfAborted(); return result;
@@ -218,9 +239,9 @@ export function createRequestHandler(ctx, services) {
     } catch (error) {
       // Rejecting an oversized async-iterated body can close the request stream.
       // Preserve its intentional 413 instead of reclassifying it as a cancel.
-      const { status, code, message } = publicError(error, controller.signal.aborted && error?.code !== 'REQUEST_TOO_LARGE');
-      if (res.headersSent) { if (!res.destroyed && !res.writableEnded) res.end(JSON.stringify({ type: 'error', code, message }) + '\n'); return; }
-      json(res, status, { ok: false, error: { code, message } });
+      const { status, code, message, detail } = publicError(error, controller.signal.aborted && error?.code !== 'REQUEST_TOO_LARGE');
+      if (res.headersSent) { if (!res.destroyed && !res.writableEnded) res.end(JSON.stringify({ type: 'error', code, message, ...(detail ? { detail } : {}) }) + '\n'); return; }
+      json(res, status, { ok: false, error: { code, message, ...(detail ? { detail } : {}) } });
     } finally { req.off('aborted', disconnected); res.off('close', disconnected); }
   };
 }

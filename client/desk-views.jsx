@@ -23,7 +23,7 @@ export function Collection({ page, rows, value = {}, onChange, onOpen, onCreate,
   </div>;
 }
 
-function ReportTrend({ rows, t }) {
+export function ReportTrend({ rows, t }) {
   const values = rows.filter(row => Number.isFinite(row.total)).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   if (!values.length) return null;
   const recent = values.slice(-12), points = recent.map((row, index) => `${20 + index * 260 / Math.max(1, recent.length - 1)},${108 - row.total * .88}`).join(' ');

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { lstat, mkdir, realpath, writeFile, open } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { lstat, mkdir, readdir, realpath, rm, writeFile, open } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ParserSupervisor, DOCUMENT_PARSER_VERSION, createWindowsOcrWorker, checkAcquisitionImage, createHttpJobSource } from './runtime/index.mjs';
@@ -11,9 +12,13 @@ const equal = (a, b) => process.platform === 'win32' ? a.toLowerCase() === b.toL
 export class MaterialImportError extends Error {
   constructor(code, message, original) { super(message); this.name = 'MaterialImportError'; this.code = code; if (original) this.original = original; }
 }
+// Picture text recognition exists only on Windows today, so elsewhere a screenshot is no way out.
+const windows = process.platform === 'win32';
 const errors = {
-  OCR_REQUIRED: '此 PDF 没有足够的文字，请上传页面截图或粘贴原文',
-  MATERIALS_OCR_UNAVAILABLE: '当前系统的文字识别不可用，请安装 Windows 识别语言或粘贴原文',
+  OCR_REQUIRED: windows ? '这个 PDF 是扫描件或图片，读不出文字。请上传页面截图、可复制文字的 PDF 或 Word，或直接粘贴正文'
+    : '这个 PDF 是扫描件或图片，读不出文字。请改传可复制文字的 PDF 或 Word，或直接粘贴正文',
+  MATERIALS_OCR_UNAVAILABLE: windows ? '当前系统的文字识别不可用，请安装 Windows 识别语言或粘贴原文'
+    : '这台电脑暂时不能识别图片里的文字。请改传可复制文字的 PDF 或 Word，或直接粘贴正文',
   MATERIALS_OCR_NO_TEXT: '图片中未识别到文字，请使用更清晰的截图或粘贴原文',
   MATERIALS_SITE_VERIFICATION: '页面需要登录或验证，请截图或粘贴你有权查看的原文',
   MATERIALS_NO_JOB_TEXT: '页面中没有可识别的岗位正文，请粘贴原文',
@@ -24,7 +29,34 @@ const errors = {
   MATERIALS_UPLOAD_INVALID: '文件内容或格式无效，请上传 PDF、DOCX、TXT、PNG 或 JPEG',
   MATERIALS_TOO_LARGE: '文件不能超过 25 MiB',
   MATERIALS_TEXT_INVALID: '没有可用文字或正文超过 200000 个字符，请检查原文',
+  MATERIALS_OPEN_UNAVAILABLE: '这台设备不能直接打开文件，可以下载原文件查看',
 };
+const PREVIEW_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+
+/** Display file name for an original: the title once, with the stored extension once. */
+export function originalFilename(title, fileId) {
+  const extension = String(fileId).split('.').at(-1);
+  let base = String(title || '').replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/gu, '_').trim();
+  const dot = base.lastIndexOf('.');
+  const current = dot > 0 ? base.slice(dot + 1).toLowerCase() : '';
+  if (current === extension || (extension === 'jpg' && current === 'jpeg')) base = base.slice(0, dot);
+  base = base.replace(/^[.\s]+/u, '').slice(0, 120).trim() || 'original';
+  return `${base}.${extension}`;
+}
+
+/** Opens a local file with the system's default app. Only a path this module wrote is ever passed. */
+export function systemOpener(platform = process.platform, env = process.env) {
+  const command = platform === 'darwin' ? '/usr/bin/open' : platform === 'win32' ? join(env.SystemRoot || 'C:\\Windows', 'explorer.exe')
+    : platform === 'linux' ? 'xdg-open' : null;
+  if (!command) return null;
+  return file => new Promise((resolve, reject) => {
+    const unavailable = () => reject(new MaterialImportError('MATERIALS_OPEN_UNAVAILABLE', errors.MATERIALS_OPEN_UNAVAILABLE));
+    let child;
+    try { child = spawn(command, [file], { detached: true, stdio: 'ignore', windowsHide: true, shell: false }); } catch { unavailable(); return; }
+    child.once('error', unavailable);
+    child.once('spawn', () => { child.unref(); resolve(); });
+  });
+}
 function fail(code, original) { throw new MaterialImportError(code, errors[code] ?? '资料读取未完成，请检查文件后重试或粘贴原文', original); }
 function failureCode(error, fallback) {
   const candidate = typeof error?.code === 'string' ? error.code : error?.message;
@@ -76,7 +108,7 @@ function inspectUpload(input) {
 }
 
 /** Imports only supplied bytes or public pages; no request can name a local source path. */
-export function createMaterialImporter({ directory, career }) {
+export function createMaterialImporter({ directory, career, openFile = systemOpener() }) {
   if (typeof directory !== 'string' || !isAbsolute(directory)) throw new Error('MATERIALS_INVALID_DIRECTORY');
   const root = resolve(directory), files = join(root, 'files');
   const temporary = join(root, 'tmp', 'materials');
@@ -200,15 +232,36 @@ export function createMaterialImporter({ directory, career }) {
     check(scopedSignal);
     return { materialId: material.id, versionId: version.id, title: material.title, source: version.source, metadata };
   });
-  const getOriginal = (input, { signal } = {}) => run(signal, async scopedSignal => {
+  async function readOriginal(input, signal) {
     const { material, version, metadata } = await sourceVersion(input);
     const original = metadata.original;
     if (!original || original.fileId !== version.source.originalFileId || original.hash !== version.source.originalHash) fail('MATERIALS_SOURCE_NOT_FOUND');
     let bytes;
     try { bytes = await storedFile(original.fileId, MAX_UPLOAD_BYTES); } catch { fail('MATERIALS_SOURCE_NOT_FOUND'); }
-    check(scopedSignal);
+    check(signal);
     if (digest(bytes) !== original.hash || !['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'image/png', 'image/jpeg'].includes(original.mime)) fail('MATERIALS_SOURCE_NOT_FOUND');
-    return { bytes, mime: original.mime, filename: `${material.title.replace(/[\\/:*?"<>|]/g, '_')}.${original.fileId.split('.').at(-1)}` };
+    return { bytes, mime: original.mime, filename: originalFilename(material.title, original.fileId) };
+  }
+  const getOriginal = (input, { signal } = {}) => run(signal, scopedSignal => readOriginal(input, scopedSignal));
+  // A read-only copy under the plugin's own temporary folder, named like the upload, opened by the
+  // system's default app. The stored original is never handed out, so an edit there cannot change it.
+  const openOriginal = (input, { signal } = {}) => run(signal, async scopedSignal => {
+    if (!openFile) fail('MATERIALS_OPEN_UNAVAILABLE');
+    const { bytes, filename } = await readOriginal(input, scopedSignal);
+    const previews = join(temporary, 'preview');
+    await ownedDirectory(previews);
+    for (const entry of await readdir(previews, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !/^[a-f0-9-]{36}$/u.test(entry.name)) continue;
+      try { if (Date.now() - (await lstat(join(previews, entry.name))).mtimeMs > PREVIEW_MAX_AGE_MS) await rm(join(previews, entry.name), { recursive: true, force: true }); }
+      catch { /* A copy still open elsewhere is removed on a later preview. */ }
+    }
+    const folder = join(previews, randomUUID());
+    await mkdir(folder, { mode: 0o700 });
+    const file = join(folder, filename);
+    await writeFile(file, bytes, { flag: 'wx', mode: 0o400 });
+    check(scopedSignal);
+    await openFile(file);
+    return { opened: true, filename };
   });
   let closing;
   function close() {
@@ -216,5 +269,5 @@ export function createMaterialImporter({ directory, career }) {
     closed = true; shutdown.abort();
     return closing = Promise.allSettled([supervisor?.close(), ocr.close(), ...pending]).then(() => {});
   }
-  return { upload, fetchUrl, getSource, getOriginal, close };
+  return { upload, fetchUrl, getSource, getOriginal, openOriginal, close };
 }

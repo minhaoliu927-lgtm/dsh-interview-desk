@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { createRealtimeProvider, RealtimeError, validateRealtimeConfig } from './realtime-provider.js';
+import { createRealtimeProvider, providerErrorCode, RealtimeError, validateRealtimeConfig } from './realtime-provider.js';
 
 const MAX_DURATION_MS = 30_000;
 const SAMPLE_RATE = 24_000;
 const MAX_PCM_BYTES = SAMPLE_RATE * 2 * 3;
-const INSTRUCTIONS = '这是一次音频服务测试。请仅用中文自然地说“你好，音频测试成功。”，然后停止。不要提问，不要调用工具，不要添加其他内容。';
-const error = (code, message, status = 502) => new RealtimeError(code, message, status);
+const INSTRUCTIONS = '这是一次音频服务测试。你会先收到一小段静音，不用回应它。请仅用中文自然地说“你好，音频测试成功。”，然后停止。不要提问，不要调用工具，不要添加其他内容。';
+const error = (code, message, status = 502, detail) => new RealtimeError(code, message, status, providerErrorCode(detail));
 const safeError = cause => cause instanceof RealtimeError ? cause : error('probe-failed', '音频 API 测试未完成，请检查 DSH 语音设置后重试。');
 
 function wave(pcm) {
@@ -64,7 +64,7 @@ export function createRealtimeProbe({ getConfig, resolveCredential, socketFactor
       const onEvent = event => {
         if (run.settled) return;
         if (event.type === 'ready') { run.ready = elapsed(); return; }
-        if (event.type === 'error') return finish(error(event.code, event.message, event.status));
+        if (event.type === 'error') return finish(error(event.code, event.message, event.status, event.detail));
         if (event.type === 'closed') return finish(error('connection-closed', '音频测试连接已断开，请重试。'));
         if (!run.requested) return;
         if (event.type === 'response-started' && !run.responseId) { run.responseId = event.responseId; return; }
@@ -97,10 +97,11 @@ export function createRealtimeProbe({ getConfig, resolveCredential, socketFactor
           run.provider = createRealtimeProvider({ resolveCredential, socketFactory, onEvent,
             connectTimeoutMs: Math.min(15_000, timeoutMs), responseTimeoutMs: timeoutMs, sessionTimeoutMs: timeoutMs,
             limits: { maxEvents: 2048, maxTextChars: 2000, maxOutputResponseBytes: 480_000 } });
+          // The provider asks for the spoken reply itself (manual opening): response.create is not
+          // allowed in VAD mode, which is why a VAD-mode request was rejected as provider-error.
+          run.requested = true;
           await run.provider.connect({ config: run.config, sessionId: `audio-probe-${randomUUID()}`, epoch: 1,
-            instructions: INSTRUCTIONS, signal: run.controller.signal });
-          if (run.settled) return;
-          run.requested = true; run.provider.requestResponse();
+            instructions: INSTRUCTIONS, signal: run.controller.signal, opening: true });
         } catch (cause) { finish(cause); }
       })();
     });

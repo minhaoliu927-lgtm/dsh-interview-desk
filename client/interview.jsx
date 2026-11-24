@@ -45,29 +45,41 @@ export function Interview({ state, interview, t, busy, onAction, onExport, voice
     if (result) { setLocalDraft(null); onAnswerDraftChange?.(undefined); }
   };
   if (interview.mode === 'realtime' && interview.status !== 'completed') return <RealtimeInterview interview={interview} t={t} busy={busy} onAction={onAction} api={realtimeApi} openSettings={openRealtimeSettings} onChanged={onChanged}/>;
-  return <div className="zj-interview-layout"><div className="zj-interview-work">
-    <span className="zj-eyebrow">{t('interview')}</span>
-    <p className="zj-subtle">{t('interviewNativeHint')}</p>
-    {interview.status === 'completed' ? <><h2>{t('report')}</h2>{report ? <><Evaluation result={report} t={t} onEvidence={onEvidence}/>{[['strengths',report.strengths],['improvements',report.improvements],['nextSteps',report.nextSteps]].map(([key, values]) => <section className="zj-card" key={key}><h3>{t(key)}</h3><Lines values={values}/></section>)}<div className="zj-actions"><Button onClick={() => onExport('report', report.id, 'docx')}>{t('exportDocx')}</Button><Button onClick={() => onExport('report', report.id, 'pdf')}>{t('exportPdf')}</Button></div></> : <p>{t('noReport')}</p>}</> : <>
-      {interview.status === 'paused' && <p className="zj-status-line">{t('paused')}</p>}
-      {current && <><p className="zj-subtle">{t('question', { number: interview.questions.indexOf(current) + 1 })}{current.kind === 'followup' ? ` · ${t('followup')}` : ''}</p><h2 className="zj-question">{current.text}</h2></>}
-      {interview.lastError && <p className="zj-error">{t('errorTitle')}</p>}
-      <form className="zj-form" onSubmit={submit}><label>{t('answer')}<textarea required rows={8} value={answer} placeholder={t('answerPlaceholder')} disabled={busy || interview.status !== 'active' || Boolean(current?.answer)} onChange={e => updateAnswer(e.target.value)}/></label>
-        <div className="zj-actions"><Button type="submit" primary disabled={busy || interview.status !== 'active' || !answer.trim() || Boolean(current?.answer)}>{t('submitAnswer')}</Button>
-          <Button disabled={busy} onClick={() => onAction(`interview.${interview.status === 'paused' ? 'resume' : 'pause'}`, { interviewId: interview.id })}>{t(interview.status === 'paused' ? 'resumeInterview' : 'pause')}</Button>
-        </div>
-      </form><VoiceAnswer key={`${interview.id}:${current?.id || ''}`} api={voiceApi} language={interview.language} t={t} interviewId={interview.id} questionId={current?.id} question={current?.text || ''}
-        onDraft={(text, draft) => { if (draft.questionId === current?.id) updateAnswer(text, draft); }} disabled={busy || interview.status !== 'active' || !current || Boolean(current.answer)}/>
-      <Button quiet disabled={busy} onClick={() => onAction('interview.finish', { interviewId: interview.id })}>{t('finish')}</Button>
-    </>}
-    {interview.questions.filter(row => row.answer).map((row, index) => {
-      const draft = row.speechDrafts?.find(item => item.id === row.answer.speechDraftId);
-      const review = draft?.reviews?.find(item => item.id === row.answer.speechReviewId);
-      return <details className="zj-answer-history" key={row.id}><summary>{t('question', { number: index + 1 })} · {row.text}</summary><p>{row.answer.text}</p>
-        {draft && review && <details><summary>{t('voiceEvidence')}</summary><h4>{t('voiceOriginalTranscript')}</h4><p>{draft.rawTranscript}</p><h4>{t('voiceEditedTranscript')}</h4><p>{review.editedTranscript}</p></details>}
-      </details>;
-    })}
-  </div>{nativeChat}</div>;
+  const number = current ? interview.questions.indexOf(current) + 1 : 0;
+  const history = interview.questions.filter(row => row.answer).map((row, index) => {
+    const draft = row.speechDrafts?.find(item => item.id === row.answer.speechDraftId);
+    const review = draft?.reviews?.find(item => item.id === row.answer.speechReviewId);
+    return <details className="zj-answer-history" key={row.id}><summary>{t('question', { number: index + 1 })} · {row.text}</summary><p>{row.answer.text}</p>
+      {draft && review && <details><summary>{t('voiceEvidence')}</summary><h4>{t('voiceOriginalTranscript')}</h4><p>{draft.rawTranscript}</p><h4>{t('voiceEditedTranscript')}</h4><p>{review.editedTranscript}</p></details>}
+    </details>;
+  });
+  if (interview.status === 'completed') return <div className="zj-room"><header className="zj-room-bar"><div className="zj-room-status"><span className="zj-tally" aria-hidden="true"/><h2 className="zj-room-phase">{t('report')}</h2></div></header>
+    <div className="zj-room-scroll"><div className="zj-room-after">
+      {report ? <><Evaluation result={report} t={t} onEvidence={onEvidence}/>{[['strengths',report.strengths],['improvements',report.improvements],['nextSteps',report.nextSteps]].map(([key, values]) => <section className="zj-card" key={key}><h3>{t(key)}</h3><Lines values={values}/></section>)}<div className="zj-actions"><Button onClick={() => onExport('report', report.id, 'docx')}>{t('exportDocx')}</Button><Button onClick={() => onExport('report', report.id, 'pdf')}>{t('exportPdf')}</Button></div></> : <p>{t('noReport')}</p>}
+      {history}
+    </div></div>{nativeChat}</div>;
+  return <div className="zj-room"><header className="zj-room-bar">
+      <div className="zj-room-status"><span className={`zj-tally${interview.status === 'active' ? ' is-live' : ''}`} aria-hidden="true"/><h2 className="zj-room-phase">{t(interview.status === 'paused' ? 'paused' : 'interview')}</h2>
+        {current && <span className="zj-room-clock">{t('question', { number })}{current.kind === 'followup' ? ` · ${t('followup')}` : ''}</span>}</div>
+      <div className="zj-actions"><Button small disabled={busy} onClick={() => onAction(`interview.${interview.status === 'paused' ? 'resume' : 'pause'}`, { interviewId: interview.id })}>{t(interview.status === 'paused' ? 'resumeInterview' : 'pause')}</Button>
+        <Button small quiet disabled={busy} onClick={() => onAction('interview.finish', { interviewId: interview.id })}>{t('finish')}</Button></div>
+    </header>
+    <div className="zj-dip is-idle">
+      <div className="zj-glow is-l" aria-hidden="true"/><div className="zj-glow is-r" aria-hidden="true"/><div className="zj-dip-axis" aria-hidden="true"/>
+      <div className="zj-pane is-l"><div className="zj-pane-block">
+        <span className="zj-who">{t('realtimeInterviewer')}</span>
+        {current ? <h2 className="zj-ask">{current.text}</h2> : <p className="zj-ask is-quiet">{t('interviewWaiting')}</p>}
+        {interview.lastError && <p className="zj-error">{t('errorTitle')}</p>}
+        <p className="zj-subtle">{t('interviewNativeHint')}</p>
+        {history}
+      </div></div>
+      <div className="zj-pane is-r"><div className="zj-pane-block">
+        <form className="zj-form" onSubmit={submit}><label>{t('answer')}<textarea required rows={8} value={answer} placeholder={t('answerPlaceholder')} disabled={busy || interview.status !== 'active' || Boolean(current?.answer)} onChange={e => updateAnswer(e.target.value)}/></label>
+          <div className="zj-actions"><Button type="submit" primary disabled={busy || interview.status !== 'active' || !answer.trim() || Boolean(current?.answer)}>{t('submitAnswer')}</Button></div>
+        </form><VoiceAnswer key={`${interview.id}:${current?.id || ''}`} api={voiceApi} language={interview.language} t={t} interviewId={interview.id} questionId={current?.id} question={current?.text || ''}
+          onDraft={(text, draft) => { if (draft.questionId === current?.id) updateAnswer(text, draft); }} disabled={busy || interview.status !== 'active' || !current || Boolean(current.answer)}/>
+      </div></div>
+    </div>{nativeChat}</div>;
 }
 
 function RealtimeInterview({ interview, t, busy, onAction, api, openSettings, onChanged }) {
@@ -81,7 +93,8 @@ function RealtimeInterview({ interview, t, busy, onAction, api, openSettings, on
     const result = await onAction('realtime.review', { interviewId: interview.id, revisions: edits });
     if (result) await onAction('interview.finish', { interviewId: interview.id });
   };
-  return <div className="zj-body zj-realtime-interview"><RealtimeCall interview={interview} api={callApi} t={t} onChanged={onChanged} openSettings={openSettings}/>
+  return <div className="zj-room-scroll"><RealtimeCall interview={interview} api={callApi} t={t} onChanged={onChanged} openSettings={openSettings}/>
+    {(interview.unassignedTranscripts?.length > 0 || (interview.status === 'paused' && answered.length > 0)) && <div className="zj-room-after">
     {interview.unassignedTranscripts?.length > 0 && <details className="zj-answer-history"><summary>{t('realtimeUnassigned')}</summary><p className="zj-subtle">{t('realtimeUnassignedNote')}</p>{interview.unassignedTranscripts.map(row => <p key={row.eventId}>{row.text}</p>)}</details>}
     {interview.status === 'paused' && answered.length > 0 && <section className="zj-card"><h3>{t('realtimeReview')}</h3><p className="zj-subtle">{t('realtimeReviewNote')}</p>
       {answered.map(question => <details className="zj-answer-history" key={question.id}><summary>{question.text}</summary>
@@ -91,5 +104,6 @@ function RealtimeInterview({ interview, t, busy, onAction, api, openSettings, on
       </details>)}
       <Button primary disabled={busy || answered.some(question => !answerText(question.answer).trim())} onClick={review}>{t('realtimeConfirmReport')}</Button>
     </section>}
+    </div>}
   </div>;
 }

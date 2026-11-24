@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
-import { createMaterialImporter, MAX_UPLOAD_BYTES } from '../src/materials/index.js';
+import { createMaterialImporter, MAX_UPLOAD_BYTES, originalFilename } from '../src/materials/index.js';
 import { createHttpJobSource, resolvePublicJobUrl, normalizeJobUrl, isPublicJobAddress, extractPublicJob } from '../src/materials/runtime/index.mjs';
 
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -78,6 +78,80 @@ test('real DOCX and PDF parsers return native text and source coordinates throug
   assert.equal(documentSource.metadata.document.blocks[0].kind, 'pdf'); assert.equal(documentSource.metadata.document.pageCount, 1);
 });
 
+// A DOCX shaped like what Word, WPS and LibreOffice write: custom properties, customXml,
+// a thumbnail, a template link and a text box stored twice (mc:Choice plus a VML mc:Fallback).
+const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main', R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+const PACKAGE = 'http://schemas.openxmlformats.org/package/2006/relationships';
+function officeDocx({ extraEntries = [], settingsTarget = 'https://templates.example.com/Resume.dotx', settingsType = `${R}/attachedTemplate` } = {}) {
+  const box = text => `<w:txbxContent><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:txbxContent>`;
+  const body = `<w:p><w:r><w:t>求职者测试简历</w:t></w:r><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:anchor><a:graphic><a:graphicData><wps:wsp><wps:txbx>${box('电话：137-0000-0000')}</wps:txbx></wps:wsp></a:graphicData></a:graphic></wp:anchor></w:drawing></mc:Choice>`
+    + `<mc:Fallback><w:pict><v:shape><v:textbox>${box('电话：137-0000-0000')}</v:textbox></v:shape></w:pict></mc:Fallback></mc:AlternateContent></w:r></w:p><w:p><w:r><w:t>负责接口测试和文档维护。</w:t></w:r></w:p>`;
+  return zip([
+    ['[Content_Types].xml', '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="jpeg" ContentType="image/jpeg"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'],
+    ['_rels/.rels', `<?xml version="1.0"?><Relationships xmlns="${PACKAGE}"><Relationship Id="rId1" Type="${R}/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="${R}/custom-properties" Target="docProps/custom.xml"/><Relationship Id="rId3" Type="${PACKAGE}/metadata/thumbnail" Target="docProps/thumbnail.jpeg"/></Relationships>`],
+    ['docProps/custom.xml', '<?xml version="1.0"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties"/>'],
+    ['docProps/thumbnail.jpeg', 'not-a-real-thumbnail'],
+    ['word/document.xml', `<?xml version="1.0"?><w:document xmlns:w="${W}" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" xmlns:wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:v="urn:schemas-microsoft-com:vml"><w:body>${body}</w:body></w:document>`],
+    ['word/_rels/document.xml.rels', `<?xml version="1.0"?><Relationships xmlns="${PACKAGE}"><Relationship Id="rId1" Type="${R}/settings" Target="settings.xml"/><Relationship Id="rId2" Type="${R}/customXml" Target="../customXml/item1.xml"/><Relationship Id="rId3" Type="http://schemas.microsoft.com/office/2007/relationships/stylesWithEffects" Target="stylesWithEffects.xml"/></Relationships>`],
+    ['word/settings.xml', `<?xml version="1.0"?><w:settings xmlns:w="${W}"/>`],
+    ['word/stylesWithEffects.xml', `<?xml version="1.0"?><w:styles xmlns:w="${W}"/>`],
+    ['word/_rels/settings.xml.rels', `<?xml version="1.0"?><Relationships xmlns="${PACKAGE}"><Relationship Id="rId1" Type="${settingsType}" Target="${settingsTarget}" TargetMode="External"/></Relationships>`],
+    ['customXml/item1.xml', '<?xml version="1.0"?><b:Sources xmlns:b="http://schemas.openxmlformats.org/officeDocument/2006/bibliography"/>'],
+    ['customXml/itemProps1.xml', '<?xml version="1.0"?><ds:datastoreItem xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml"/>'],
+    ['customXml/_rels/item1.xml.rels', `<?xml version="1.0"?><Relationships xmlns="${PACKAGE}"><Relationship Id="rId1" Type="${R}/customXmlProps" Target="itemProps1.xml"/></Relationships>`],
+    ...extraEntries]);
+}
+const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+
+test('a Word or WPS package with routine extra parts imports, and a text box is read once', async t => {
+  const { importer } = await setup(t);
+  const material = await importer.upload(upload(officeDocx(), 'wps.docx', DOCX_MIME));
+  assert.equal(material.versions[0].text, '求职者测试简历\n电话：137-0000-0000\n负责接口测试和文档维护。');
+});
+
+test('macros, embedded objects and external links other than a template stay rejected', async t => {
+  const { importer, materials } = await setup(t);
+  await assert.rejects(importer.upload(upload(officeDocx({ extraEntries: [['word/vbaProject.bin', 'macro']] }), 'macro.docx', DOCX_MIME)), { code: 'DOCUMENT_UNSAFE' });
+  await assert.rejects(importer.upload(upload(officeDocx({ extraEntries: [['word/embeddings/oleObject1.bin', 'ole']] }), 'ole.docx', DOCX_MIME)), { code: 'DOCUMENT_UNSAFE' });
+  await assert.rejects(importer.upload(upload(officeDocx({ settingsType: `${R}/oleObject`, settingsTarget: 'https://example.com/x.bin' }), 'link.docx', DOCX_MIME)), { code: 'DOCUMENT_UNSAFE' });
+  assert.equal(materials.length, 0);
+});
+
+/** The plain test PDF with extra catalog entries and objects (numbered from 6). */
+function pdfWith(catalog, extra = []) {
+  const text = 'Synthetic resume for parser verification. Developed a sample application and wrote reliable tests. No personal information is included.';
+  const stream = `BT /F1 12 Tf 50 700 Td (${text}) Tj ET`;
+  const objects = [`<< /Type /Catalog /Pages 2 0 R ${catalog} >>`, '<< /Type /Pages /Kids [3 0 R] /Count 1 >>', '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>', `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`, ...extra];
+  let output = '%PDF-1.4\n'; const offsets = [0];
+  objects.forEach((value, index) => { offsets.push(Buffer.byteLength(output)); output += `${index + 1} 0 obj\n${value}\nendobj\n`; });
+  const xref = Buffer.byteLength(output); output += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.slice(1).map(at => `${String(at).padStart(10, '0')} 00000 n \n`).join('')}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(output);
+}
+async function pdfLibDocument(withScript) {
+  const { PDFDocument, PDFName, PDFString, StandardFonts } = await import('pdf-lib');
+  const document = await PDFDocument.create();
+  const page = document.addPage([595, 842]), font = await document.embedFont(StandardFonts.Helvetica);
+  page.drawText('Synthetic resume made by a web resume builder. Built sample services and wrote reliable tests.', { x: 40, y: 780, size: 11, font });
+  if (withScript) document.catalog.set(PDFName.of('OpenAction'), document.context.register(document.context.obj({ S: 'JavaScript', JS: PDFString.of('app.alert(1)') })));
+  return Buffer.from(await document.save({ useObjectStreams: true }));
+}
+
+test('PDFs with bookmarks, an open-at-page-1 action or object streams import; active content inside them does not', async t => {
+  const { importer, materials } = await setup(t);
+  const outline = '/Outlines 6 0 R';
+  const bookmarks = ['<< /Type /Outlines /First 7 0 R /Last 8 0 R /Count 2 >>', '<< /Title (Experience) /Parent 6 0 R /Next 8 0 R /Dest [3 0 R /XYZ 0 792 0] >>',
+    '<< /Title (Education) /Parent 6 0 R /Prev 7 0 R /Dest [3 0 R /XYZ 0 400 0] >>'];
+  for (const [name, bytes] of [['bookmarks.pdf', pdfWith(outline, bookmarks)], ['open-at-page.pdf', pdfWith('/OpenAction [3 0 R /XYZ null null 0]')], ['builder.pdf', await pdfLibDocument(false)]]) {
+    const material = await importer.upload(upload(bytes, name, 'application/pdf'));
+    assert.match(material.versions[0].text, /Synthetic resume/, name);
+  }
+  for (const [name, bytes] of [['script-in-object-stream.pdf', await pdfLibDocument(true)], ['print-on-open.pdf', pdfWith('/OpenAction << /S /Named /N /Print >>')],
+    ['indirect-open.pdf', pdfWith('/OpenAction 6 0 R', ['<< /S /URI /URI (https://example.com/) >>'])]]) {
+    await assert.rejects(importer.upload(upload(bytes, name, 'application/pdf')), { code: 'DOCUMENT_UNSAFE' }, name);
+  }
+  assert.equal(materials.length, 3);
+});
+
 test('text-poor PDF retains the original and requests screenshots without creating fake material', async t => {
   const { importer, directory, materials } = await setup(t);
   await assert.rejects(importer.upload(upload(pdf(''), 'scan.pdf', 'application/pdf')), error => {
@@ -93,6 +167,38 @@ test('oversized, invalid UTF-8, MIME-spoofed and cancelled uploads never create 
   await assert.rejects(importer.upload(upload(pdf(), 'bad.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')), { code: 'MATERIALS_UPLOAD_INVALID' });
   await assert.rejects(importer.upload(upload('text', 'sample.txt', 'text/plain'), { signal: AbortSignal.abort() }), { code: 'MATERIALS_ACQUISITION_CANCELLED' });
   assert.equal(materials.length, 0);
+});
+
+test('preview opens a read-only copy named like the upload, and never the stored original', async t => {
+  const { directory, materials } = await setup(t);
+  const opened = [];
+  const career = { dispatch: async (action, data) => {
+    if (action === 'state') return { materials };
+    const version = { id: randomUUID(), text: data.text, hash: hash(data.text), source: data.source, confirmed: false };
+    const material = { id: randomUUID(), title: data.title, kind: data.kind, latestVersionId: version.id, versions: [version] };
+    materials.push(material); return material;
+  } };
+  const importer = createMaterialImporter({ directory: join(directory, 'preview-case'), career, openFile: async file => { opened.push({ file, bytes: await readFile(file) }); } });
+  t.after(() => importer.close());
+  const bytes = Buffer.from('合成简历\n负责接口测试');
+  const material = await importer.upload(upload(bytes, '张三简历.txt', 'text/plain'));
+  const result = await importer.openOriginal({ versionId: material.latestVersionId });
+  assert.deepEqual(result, { opened: true, filename: '张三简历.txt' });
+  assert.equal(opened.length, 1); assert.deepEqual(opened[0].bytes, bytes);
+  assert.ok(opened[0].file.endsWith('张三简历.txt')); assert.ok(!opened[0].file.includes(material.versions[0].source.originalFileId));
+  if (process.platform !== 'win32') assert.equal((await stat(opened[0].file)).mode & 0o777, 0o400);
+  const closed = createMaterialImporter({ directory: join(directory, 'no-opener'), career, openFile: null });
+  t.after(() => closed.close());
+  const other = await closed.upload(upload(bytes, 'resume.txt', 'text/plain'));
+  await assert.rejects(closed.openOriginal({ versionId: other.latestVersionId }), { code: 'MATERIALS_OPEN_UNAVAILABLE' });
+});
+
+test('original file names carry the title once and the stored extension once', () => {
+  assert.equal(originalFilename('张三简历.pdf', 'a.pdf'), '张三简历.pdf');
+  assert.equal(originalFilename('照片.JPEG', 'a.jpg'), '照片.jpg');
+  assert.equal(originalFilename('简历', 'a.docx'), '简历.docx');
+  assert.equal(originalFilename('../../a/b:c.pdf', 'a.pdf'), '_.._a_b_c.pdf');
+  assert.equal(originalFilename('...', 'a.txt'), 'original.txt');
 });
 
 test('source access requires an imported version, matching content hash and an unchanged regular original file', async t => {

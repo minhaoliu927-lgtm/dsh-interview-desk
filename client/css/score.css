@@ -1,0 +1,325 @@
+/*
+ * Score step: sits between the resume and the start on the same axis.
+ * The dial rides the axis; the job side reads the fit, the candidate side
+ * reads the resume itself. The verdict bar and the revision panel straddle
+ * both sides, like the start bar.
+ */
+@property --zj-p {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 0;
+}
+.zj-sec.is-score {
+  grid-template-rows: auto auto auto;
+}
+.zj-sec.is-score .zj-side {
+  padding-bottom: 28px;
+}
+
+/* The dial replaces the node and carries the score on the axis. */
+.zj-dial {
+  --zj-p: 0;
+  position: absolute;
+  left: 50%;
+  top: 84px;
+  z-index: 1;
+  width: 112px;
+  height: 112px;
+  margin-left: -56px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background:
+    radial-gradient(closest-side, var(--zj-bg) calc(100% - 5px), transparent calc(100% - 4px)),
+    conic-gradient(var(--zj-dial-color, var(--zj-accent)) calc(var(--zj-p) * 1%), var(--zj-line) 0);
+  transition: --zj-p 1.4s var(--zj-ease);
+  pointer-events: none;
+}
+.zj-dial.is-below {
+  --zj-dial-color: var(--zj-edge);
+}
+/* The 80 mark: a short tick on the ring. */
+.zj-dial::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(transparent 79.4%, var(--zj-ink) 79.4% 80.6%, transparent 80.6%);
+  mask: radial-gradient(closest-side, transparent calc(100% - 9px), #000 calc(100% - 9px));
+  opacity: 0.55;
+}
+.zj-dial-num {
+  font-family: var(--zj-kai);
+  font-size: 40px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.zj-dial-num small {
+  display: block;
+  margin-top: 4px;
+  font-family: var(--dsw-font-family, inherit);
+  font-size: 11px;
+  color: var(--zj-muted);
+  text-align: center;
+}
+.zj-dial.is-busy {
+  background:
+    radial-gradient(closest-side, var(--zj-bg) calc(100% - 5px), transparent calc(100% - 4px)),
+    conic-gradient(from 0deg, transparent 0 70%, var(--zj-accent) 100%);
+  animation: zj-spin 1.6s linear infinite;
+}
+.zj-dial.is-busy .zj-dial-num {
+  animation: zj-spin 1.6s linear infinite reverse;
+  color: var(--zj-muted);
+  font-size: 22px;
+}
+.zj-dial.is-busy::after {
+  display: none;
+}
+@keyframes zj-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* Criteria: name, four pips, the points they carry. */
+.zj-crits {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.zj-crits > li {
+  border-top: 1px solid var(--zj-line);
+}
+.zj-crits > li:last-child {
+  border-bottom: 1px solid var(--zj-line);
+}
+.zj-crit summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 46px;
+  align-items: center;
+  gap: 12px;
+  min-height: 42px;
+  cursor: pointer;
+  list-style: none;
+}
+.zj-crit summary::-webkit-details-marker {
+  display: none;
+}
+.zj-crit summary:focus-visible {
+  outline: 2px solid var(--zj-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.zj-crit-name {
+  overflow-wrap: anywhere;
+}
+.zj-crit-pts {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--zj-muted);
+}
+.zj-pips {
+  display: flex;
+  gap: 3px;
+}
+.zj-pip {
+  width: 14px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--zj-line);
+}
+.zj-pip.is-on {
+  background: var(--zj-accent);
+  animation: zj-pip 0.5s var(--zj-ease) both;
+  animation-delay: calc(var(--zj-i, 0) * 70ms + 300ms);
+}
+@keyframes zj-pip {
+  from {
+    background: var(--zj-line);
+  }
+}
+.zj-crit-unknown {
+  font-size: 12px;
+  color: var(--zj-muted);
+}
+.zj-crit p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--zj-muted);
+}
+.zj-skel {
+  height: 42px;
+  border-top: 1px solid var(--zj-line);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--zj-ink) 6%, transparent), transparent) 0 0 / 200% 100%;
+  animation: zj-shimmer 1.6s linear infinite;
+}
+.zj-skel:last-child {
+  border-bottom: 1px solid var(--zj-line);
+}
+@keyframes zj-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* Verdict bar. */
+.zj-sec.is-score .zj-bar {
+  width: min(720px, calc(100% - 48px));
+  margin-bottom: 24px;
+}
+.zj-verdict {
+  margin: 0;
+  font-family: var(--zj-kai);
+  font-size: 22px;
+  line-height: 1.5;
+  color: var(--zj-ink);
+}
+.zj-sec.is-score .zj-bar .zj-verdict {
+  color: var(--zj-ink);
+}
+.zj-delta {
+  margin-left: 10px;
+  font-family: var(--dsw-font-family, inherit);
+  font-size: 13px;
+  color: var(--zj-muted);
+}
+.zj-delta.is-up {
+  color: var(--zj-accent);
+}
+.zj-hints {
+  margin: 10px auto 0;
+  padding: 0;
+  max-width: 560px;
+  list-style: none;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--zj-muted);
+}
+.zj-hints li {
+  position: relative;
+  padding-left: 14px;
+}
+.zj-hints li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.8em;
+  width: 5px;
+  height: 1px;
+  background: var(--zj-edge);
+}
+.zj-bar .zj-flow-actions {
+  justify-content: center;
+}
+.zj-weights {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--zj-muted);
+}
+
+/* Revision panel: proposed edits or the user's own edit, full width. */
+.zj-revise {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: min(880px, calc(100% - 48px));
+  margin-bottom: 56px;
+  padding: 20px 22px;
+  border: 1px solid var(--zj-edge);
+  border-radius: 16px;
+  background: var(--zj-bg);
+}
+.zj-revise-head {
+  margin: 0 0 12px;
+  color: var(--zj-muted);
+  line-height: 1.7;
+}
+.zj-revise-list {
+  display: grid;
+  gap: 10px;
+  max-height: 46cqh;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.zj-change {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--zj-line);
+  border-radius: 12px;
+  transition: border-color 0.2s ease-out, opacity 0.2s ease-out;
+}
+.zj-change:has(input:checked) {
+  border-color: var(--zj-edge);
+}
+.zj-change:not(:has(input:checked)) {
+  opacity: 0.6;
+}
+.zj-change input {
+  margin-top: 4px;
+  accent-color: var(--zj-accent);
+}
+.zj-change-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  font-size: 13px;
+  line-height: 1.75;
+}
+.zj-change-before {
+  color: var(--zj-muted);
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--zj-muted) 50%, transparent);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.zj-change-after {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.zj-change-why {
+  grid-column: 2;
+  margin: 0;
+  font-size: 12px;
+  color: var(--zj-muted);
+}
+.zj-revise textarea.zj-field {
+  min-height: 260px;
+  max-height: 46cqh;
+}
+.zj-revise .zj-flow-actions {
+  justify-content: flex-end;
+}
+
+@container (max-width: 759px) {
+  .zj-dial {
+    position: relative;
+    left: auto;
+    top: auto;
+    margin: 32px auto 0;
+    grid-column: 1;
+  }
+  .zj-sec.is-score .zj-side {
+    padding-top: 28px;
+  }
+  .zj-change-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zj-dial,
+  .zj-dial.is-busy,
+  .zj-dial.is-busy .zj-dial-num,
+  .zj-pip.is-on,
+  .zj-skel {
+    transition: none;
+    animation: none;
+  }
+}

@@ -1,0 +1,347 @@
+/*
+ * Interview room: the interviewer left of the axis, the candidate right of it.
+ * The light along the axis shows whose turn it is. During a voice call it
+ * follows the real loudness of each side (see RealtimeCall); otherwise the
+ * phase classes drive a slower, simulated pulse.
+ */
+.zj-room {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  container-type: inline-size;
+}
+.zj-room-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  flex-wrap: wrap;
+  min-height: 56px;
+  padding: 8px 32px;
+  border-bottom: 1px solid var(--zj-line);
+}
+.zj-room-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+.zj-room-phase {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.zj-room-clock {
+  color: var(--zj-muted);
+}
+.zj-tally {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1px solid var(--zj-muted);
+}
+.zj-tally.is-live {
+  border-color: var(--zj-accent);
+  background: var(--zj-accent);
+  animation: zj-tally 1.6s ease-in-out infinite;
+}
+@keyframes zj-tally {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.zj-dip {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  overflow: hidden;
+  background: linear-gradient(to right, var(--zj-panel) 50%, var(--zj-bg) 50%);
+}
+/* Each side scrolls on its own, so a long answer never pushes the question away. */
+.zj-pane {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  padding: 64px 64px 56px;
+  overflow-y: auto;
+}
+.zj-pane.is-l {
+  padding-right: 116px;
+}
+.zj-pane.is-r {
+  padding-left: 116px;
+}
+.zj-pane-block {
+  display: block;
+  max-width: 440px;
+}
+.zj-pane.is-l .zj-pane-block {
+  margin-left: auto;
+}
+.zj-pane.is-r .zj-pane-block {
+  margin-right: auto;
+}
+.zj-who {
+  display: block;
+  font-size: 13px;
+}
+.zj-ask {
+  margin: 12px 0 0;
+  font-family: var(--zj-kai);
+  font-size: 30px;
+  line-height: 1.6;
+  font-weight: 400;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+.zj-ask.is-quiet {
+  font-size: 22px;
+  color: var(--zj-muted);
+}
+.zj-say {
+  margin: 12px 0 0;
+  font-family: var(--zj-kai);
+  font-size: 20px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.zj-pane .zj-actions {
+  margin-top: 18px;
+}
+.zj-pane .zj-subtle {
+  margin: 14px 0 0;
+}
+.zj-pane .zj-error {
+  margin-top: 14px;
+  border-radius: 10px;
+}
+.zj-pane .zj-form {
+  margin-top: 12px;
+}
+.zj-pane .zj-form textarea {
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+.zj-dip-axis {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: linear-gradient(to bottom, transparent, var(--zj-edge) 12%, var(--zj-edge) 88%, transparent);
+  pointer-events: none;
+}
+
+/* The light. */
+.zj-glow {
+  position: absolute;
+  top: 50%;
+  width: 560px;
+  height: 680px;
+  margin-top: -340px;
+  opacity: 0;
+  transition: opacity 0.9s ease;
+  pointer-events: none;
+}
+.zj-glow.is-l {
+  right: 50%;
+  transform-origin: 100% 50%;
+  background: radial-gradient(farthest-side at 100% 50%, var(--zj-glow), transparent);
+}
+.zj-glow.is-r {
+  left: 50%;
+  transform-origin: 0 50%;
+  background: radial-gradient(farthest-side at 0 50%, var(--zj-glow), transparent);
+}
+.zj-dip.is-idle .zj-glow.is-l {
+  opacity: 0.5;
+}
+.zj-dip.is-speaking .zj-glow.is-l {
+  opacity: 1;
+  animation: zj-speak 1.1s ease-in-out infinite alternate;
+}
+.zj-dip.is-listening .zj-glow.is-r {
+  opacity: 1;
+  animation: zj-speak 0.9s ease-in-out infinite alternate;
+}
+.zj-dip.is-thinking .zj-glow {
+  animation: zj-think 2.4s ease-in-out infinite;
+}
+.zj-dip.is-thinking .zj-dip-axis {
+  animation: zj-axis 2.4s ease-in-out infinite;
+}
+/* Real loudness replaces the simulated pulse while the meter is live. */
+.zj-dip[data-levels='on'] .zj-glow {
+  animation: none;
+  transition: none;
+}
+.zj-dip[data-levels='on'] .zj-glow.is-l {
+  opacity: calc(0.14 + var(--zj-level-out, 0) * 0.86);
+  transform: scale(calc(1 + var(--zj-level-out, 0) * 0.1));
+}
+.zj-dip[data-levels='on'] .zj-glow.is-r {
+  opacity: calc(0.14 + var(--zj-level-in, 0) * 0.86);
+  transform: scale(calc(1 + var(--zj-level-in, 0) * 0.1));
+}
+@keyframes zj-speak {
+  0% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+  55% {
+    opacity: 0.72;
+    transform: scale(1.02);
+  }
+  100% {
+    opacity: 0.95;
+    transform: scale(1.05);
+  }
+}
+@keyframes zj-think {
+  0%,
+  100% {
+    opacity: 0.2;
+    transform: scaleX(0.35);
+  }
+  50% {
+    opacity: 0.42;
+    transform: scaleX(0.5);
+  }
+}
+@keyframes zj-axis {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Countdown shown over the axis while the call connects. */
+.zj-count {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--zj-bg);
+  pointer-events: none;
+}
+.zj-count span {
+  font-size: 180px;
+  line-height: 1;
+  font-weight: 200;
+  font-variant-numeric: tabular-nums;
+  animation: zj-count 0.8s ease both;
+}
+@keyframes zj-count {
+  0% {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  25% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.08);
+  }
+}
+
+/* After the call: transcript review and the report use the full width. */
+.zj-room-after {
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 8px 32px 48px;
+}
+.zj-room-after textarea {
+  display: block;
+  width: 100%;
+  margin: 10px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--zj-line);
+  border-radius: 12px;
+  background: var(--zj-bg);
+  color: var(--zj-ink);
+  line-height: 1.7;
+  resize: vertical;
+}
+.zj-room-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.zj-room-scroll > .zj-room {
+  flex: 1 0 auto;
+  min-height: 440px;
+}
+
+@container (max-width: 759px) {
+  .zj-dip {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    overflow-y: auto;
+    background: var(--zj-bg);
+  }
+  .zj-pane {
+    overflow: visible;
+  }
+  .zj-pane,
+  .zj-pane.is-l,
+  .zj-pane.is-r {
+    padding: 32px 24px;
+  }
+  .zj-pane.is-l {
+    background: var(--zj-panel);
+  }
+  .zj-pane.is-l .zj-pane-block,
+  .zj-pane.is-r .zj-pane-block {
+    margin: 0;
+    max-width: none;
+  }
+  .zj-dip-axis,
+  .zj-glow {
+    display: none;
+  }
+  .zj-room-bar {
+    padding: 8px 16px;
+  }
+  .zj-ask {
+    font-size: 24px;
+  }
+  .zj-count span {
+    font-size: 120px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .zj-glow,
+  .zj-dip-axis,
+  .zj-tally.is-live,
+  .zj-count span {
+    animation: none !important;
+  }
+  .zj-dip[data-levels='on'] .zj-glow {
+    transform: none !important;
+  }
+}

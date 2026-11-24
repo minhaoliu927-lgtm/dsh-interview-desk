@@ -1,0 +1,127 @@
+# 推到 main 时，如果 package.json 里的版本还没发过，就：
+#   1. 构建、跑测试、检查安装包，发到 npm（Trusted Publishing，不用 token）
+#   2. 打 v版本号 标签，建 GitHub Release，附上 .tgz 和 .sha256
+#   3. 把 index.json 改成 npm 上的这一版，提交回 main
+# 每一步都先看做没做过，中途失败后重跑只补没做完的。
+#
+# 第一次用之前，在 npmjs.com 的包设置里加一个 Trusted Publisher：
+#   GitHub Actions · minhaoliu927-lgtm / dsh-interview-desk · release.yml（Environment 留空）
+# 加好后 2 天内要成功发一次，否则这条配置失效，要删掉重加。
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # 只在本仓库的 main 上发布（手动运行时也要选 main）
+    if: github.repository == 'minhaoliu927-lgtm/dsh-interview-desk' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 50
+
+      # npm 默认就发到官方源，这里不设 registry-url：发包走 OIDC 换来的一次性凭据，不放 token。
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: 看这一版还差哪几步
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name=$(node -p "require('./package.json').name")
+          version=$(node -p "require('./package.json').version")
+          on_npm=$(npm view "$name@$version" version 2>/dev/null || true)
+          indexed=$(node -p "const v=require('./index.json').plugins[0].versions[0]; v.source.type==='npm' ? v.version : ''")
+          publish=true; [ "$on_npm" = "$version" ] && publish=false
+          release=true; gh release view "v$version" >/dev/null 2>&1 && release=false
+          index=true; [ "$indexed" = "$version" ] && index=false
+          case "$version" in *-*) tag=next; prerelease=true ;; *) tag=latest; prerelease=false ;; esac
+          # 说明取自把版本号改成这一版的那次提交
+          commit=$(git log -1 --format=%H -G"\"version\": \"$version\"" -- package.json)
+          [ -n "$commit" ] || commit=$GITHUB_SHA
+          {
+            echo "name=$name"; echo "version=$version"; echo "file=$name-$version.tgz"
+            echo "publish=$publish"; echo "release=$release"; echo "index=$index"
+            echo "tag=$tag"; echo "prerelease=$prerelease"; echo "commit=$commit"
+          } >> "$GITHUB_OUTPUT"
+          echo "$name@$version  npm: $([ $publish = true ] && echo 待发布 || echo 已发布)  Release: $([ $release = true ] && echo 待建 || echo 已有)  index.json: $([ $index = true ] && echo 待更新 || echo 已是这一版)"
+
+      - uses: pnpm/action-setup@v4
+        if: steps.plan.outputs.publish == 'true'
+        with:
+          version: 11
+
+      - name: 构建、测试、检查、打包
+        if: steps.plan.outputs.publish == 'true'
+        run: |
+          pnpm install --frozen-lockfile
+          node scripts/fetch-font.mjs --verify-only
+          pnpm run build
+          node --test test/*.test.js
+          node scripts/audit-package.mjs
+          mkdir -p release
+          npm pack --ignore-scripts --pack-destination release
+          test -f "release/${{ steps.plan.outputs.file }}"
+
+      - name: 发到 npm
+        if: steps.plan.outputs.publish == 'true'
+        run: |
+          # Trusted Publishing 要 npm 11.5.1 及以上
+          node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$(npm --version)" || npm install -g npm@11
+          npm publish "release/${{ steps.plan.outputs.file }}" --access public --tag "${{ steps.plan.outputs.tag }}"
+
+      - name: 建 GitHub Release
+        if: steps.plan.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NAME: ${{ steps.plan.outputs.name }}
+          FILE: ${{ steps.plan.outputs.file }}
+          VERSION: ${{ steps.plan.outputs.version }}
+          COMMIT: ${{ steps.plan.outputs.commit }}
+          PRERELEASE: ${{ steps.plan.outputs.prerelease }}
+        run: |
+          mkdir -p release
+          # 这次没发包（之前发过）就把 npm 上那一份取下来，保证附件和 npm 上一字不差
+          [ -f "release/$FILE" ] || npm pack "$NAME@$VERSION" --pack-destination release
+          (cd release && sha256sum "$FILE" > "$FILE.sha256")
+          git log -1 --format=%b "$COMMIT" | sed -E '/^(Co-Authored-By|Claude-Session|Signed-off-by):/d' > release/notes.md
+          [ -s release/notes.md ] || git log -1 --format=%s "$COMMIT" > release/notes.md
+          printf '\n安装：在 DeepSeek Harness 的「插件」→「添加插件」里输入 `%s`。\n' "$NAME" >> release/notes.md
+          flag=""; [ "$PRERELEASE" = true ] && flag=--prerelease
+          gh release create "v$VERSION" "release/$FILE" "release/$FILE.sha256" \
+            --target "$COMMIT" --title "$VERSION" --notes-file release/notes.md $flag
+
+      - name: 更新 index.json
+        if: steps.plan.outputs.index == 'true'
+        env:
+          NAME: ${{ steps.plan.outputs.name }}
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          # 刚发布时 registry 可能还没同步，最多等一分钟
+          for attempt in 1 2 3 4 5 6; do
+            seconds=$(npm view "$NAME" time --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const t=JSON.parse(s)[process.argv[1]];console.log(t?Math.floor(Date.parse(t)/1000):'')}catch{console.log('')}})" "$VERSION")
+            [ -n "$seconds" ] && break
+            sleep 10
+          done
+          [ -n "$seconds" ] || { echo "npm 上还查不到 $NAME@$VERSION 的发布时间"; exit 1; }
+          node scripts/update-index.mjs "$seconds"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.json
+          git diff --cached --quiet && exit 0
+          git commit -m "index.json: $NAME@$VERSION"
+          git push origin HEAD:main

@@ -197,6 +197,8 @@ test('only whitelisted complete function arguments execute, duplicate call IDs n
   const calls = []; const f = setup(t, { tools: [tool], onToolCall: async args => { calls.push(args); return { ok: true, saved: true }; } });
   await f.ready(); response(f.socket);
   assert.deepEqual(f.socket.sent[0].session.tools, [{ type: 'function', function: tool }]);
+  // The provider refuses enable_search together with tools.
+  assert.equal('enable_search' in f.socket.sent[0].session, false);
   output(f.socket, 'response.function_call_arguments.delta', { call_id: 'call-1', delta: 'malformed fragments are ignored' });
   output(f.socket, 'response.function_call_arguments.done', { call_id: 'call-1', name: tool.name, arguments: '{"text":"我的回答","sessionId":"forged"}' });
   output(f.socket, 'response.function_call_arguments.done', { call_id: 'call-1', name: tool.name, arguments: '{}' });
@@ -395,4 +397,76 @@ test('abort/close promptly releases a pending finishInput, drops late final pack
   const count = f.events.length;
   f.socket.message({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'user-1', transcript: 'late after close' });
   assert.equal(f.events.length, count);
+});
+
+test('without tools the session sends no tools field, and a dated snapshot model name still becomes ready', async t => {
+  const f = setup(t), pending = f.start();
+  await f.created();
+  assert.equal('tools' in f.socket.sent[0].session, false); assert.equal(f.socket.sent[0].session.enable_search, false);
+  f.socket.message({ type: 'session.updated', session: { id: 'vendor-session', model: `${config.model}-2026-09-30`, input_audio_format: 'pcm', output_audio_format: 'pcm' } });
+  assert.equal((await pending).phase, 'ready');
+});
+
+test('a rejected session setting fails at once with its own code and the provider code, never the provider message', async t => {
+  const f = setup(t), pending = f.start();
+  const rejected = assert.rejects(pending, cause => {
+    assert.equal(cause.code, 'session-rejected'); assert.equal(cause.detail, 'invalid_value');
+    assert.equal(JSON.stringify(cause).includes('test-only-secret') || cause.message.includes('param'), false); return true;
+  });
+  await f.created();
+  f.socket.message({ type: 'error', error: { type: 'invalid_request_error', code: 'invalid_value', message: 'param session.tools is not supported', param: 'session.tools' } });
+  await rejected;
+  // A code that could carry a key, digits or a sentence is dropped; the category stays.
+  for (const code of ['sk-123abc', 'invalid value with spaces', 'x'.repeat(60), 42]) {
+    const g = setup(t), next = g.start();
+    const failed = assert.rejects(next, cause => { assert.equal(cause.code, 'session-rejected'); assert.equal(cause.detail, undefined); return true; });
+    await g.created(); g.socket.message({ type: 'error', error: { code } }); await failed;
+  }
+});
+
+test('an opening call starts in manual mode: silence, commit, then one reply request; VAD returns after that reply', async t => {
+  const f = setup(t), pending = f.start({ opening: true });
+  await f.created();
+  assert.equal(f.socket.sent[0].session.turn_detection, null, 'VAD mode forbids response.create, so the call opens in manual mode');
+  f.acknowledge(); await pending;
+  assert.deepEqual(f.socket.sent.slice(1).map(event => event.type), ['input_audio_buffer.append', 'input_audio_buffer.commit']);
+  assert.deepEqual(Buffer.from(f.socket.sent[1].audio, 'base64'), Buffer.alloc(6400));
+  // The caller cannot add a second request while the opening is pending.
+  assert.equal(f.provider.requestResponse(), false);
+  // Microphone audio arriving during the opening is buffered, not part of the opening commit.
+  assert.equal(f.provider.appendAudio({ audioBase64: pcm(3200), seq: 0 }), true);
+  f.socket.message({ type: 'input_audio_buffer.committed', item_id: 'opening-silence' });
+  f.socket.message({ type: 'conversation.item.input_audio_transcription.completed', item_id: 'opening-silence', transcript: '' });
+  assert.equal(f.socket.sent.filter(event => event.type === 'response.create').length, 1);
+  assert.equal(f.events.some(event => ['input-committed', 'input-transcript', 'speech-started'].includes(event.type)), false, 'the silence is not a candidate turn');
+  response(f.socket); output(f.socket, 'response.audio_transcript.done', { transcript: '你好，请先做个自我介绍。' });
+  assert.equal(f.events.find(event => event.type === 'response-started').turnId, 0);
+  f.socket.message({ type: 'response.done', response: { id: 'response-1', status: 'completed' } });
+  const after = f.socket.sent.slice(-2);
+  assert.equal(after[0].type, 'input_audio_buffer.clear', 'room sound captured during the opening is dropped');
+  assert.deepEqual(after[1].session, { turn_detection: { type: 'server_vad', threshold: 0.5, silence_duration_ms: 800 } });
+  // The acknowledgement of the VAD switch is not mistaken for a finishing handshake.
+  f.socket.message({ type: 'session.updated', session: { id: 'vendor-session', turn_detection: { type: 'server_vad' } } });
+  assert.equal(f.provider.getState().phase, 'ready');
+  speech(f.socket);
+  assert.equal(f.events.find(event => event.type === 'input-committed').turnId, 1);
+});
+
+test('an opening without buffered microphone audio sends no clear; a non-boolean opening is refused', async t => {
+  const f = setup(t), pending = f.start({ opening: true });
+  await f.created(); f.acknowledge(); await pending;
+  f.socket.message({ type: 'input_audio_buffer.committed', item_id: 'opening-silence' });
+  response(f.socket); f.socket.message({ type: 'response.done', response: { id: 'response-1', status: 'cancelled' } });
+  assert.equal(f.socket.sent.some(event => event.type === 'input_audio_buffer.clear'), false);
+  assert.equal(f.socket.sent.at(-1).session.turn_detection.type, 'server_vad', 'VAD returns even when the opening reply was cancelled');
+  const g = setup(t);
+  await assert.rejects(g.start({ opening: 'yes' }), { code: 'invalid-session' });
+});
+
+test('a provider error after setup carries its type when it has no usable code', async t => {
+  const f = setup(t); await f.ready();
+  f.socket.message({ type: 'error', error: { type: 'invalid_request_error', code: 40001, message: 'secret detail' } });
+  const failure = f.events.find(event => event.type === 'error');
+  assert.equal(failure.code, 'provider-error'); assert.equal(failure.detail, 'invalid_request_error');
+  assert.equal(JSON.stringify(f.events).includes('secret detail'), false);
 });

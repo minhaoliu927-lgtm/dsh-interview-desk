@@ -1,0 +1,38 @@
+// Copy for the home page (dev.11).
+export const zhHome = {
+  navHome: '首页',
+  homeHowLabel: '怎么用',
+  homeStartFirst: '准备第一场面试', homeSetupVoice: '接入语音',
+  homeStep1Title: '岗位和简历', homeStep1Text: '贴上想面的岗位要求，再放一份简历。PDF、Word 或直接粘贴都行。',
+  homeStep2Title: '简历评分', homeStep2Text: '对照岗位占 65%，简历本身占 35%，80 分过关。不到 80，可以照建议改一版。',
+  homeStep3Title: '模拟面试', homeStep3Text: '默认用语音，问 5 道题，题目从你的简历和这个岗位里来。',
+  homeStep4Title: '复盘', homeStep4Text: '报告只看你确认过的回答，能导出 PDF。',
+  homeNextLabel: '下一场', homeNextUntitled: '选一个想面的岗位',
+  homeContinue: '继续准备', homeGoStart: '去开始', homeSwitchRole: '换个岗位',
+  homeStatInterviews: '面试', homeStatCount: '{count} 场', homeStatDone: '{done} 场已结束', homeStatNoneYet: '还没面过',
+  homeStatLatest: '最近一场', homeStatLatestSub: '{date} · {role}', homeStatNoReport: '面完一场就有分数',
+  homeStatScore: '简历分', homeStatScoreNone: '还没评分', homeScorePass: '过了 80，可以面了', homeScoreGap: '离 80 还差 {gap} 分',
+  homeRecent: '最近的面试', homeAllReview: '全部复盘', homeRoles: '你的岗位', homeAllLibrary: '全部资料',
+  homeRolePrepare: '准备这一场', homeRoleCurrent: '正在准备', homeRoleInterviews: '面过 {count} 场', homeRoleNever: '还没面过',
+  homeRoleScore: '简历 {score} 分', homeTrend: '最近 {count} 场的分数',
+  homeVoiceTitle: '语音面试', homeVoiceReady: '百炼实时语音已接入。', homeVoiceUntested: '设置填好了，还差一次测试。在设置里点「测试连接」。', homeVoiceNone: '语音面试用的是阿里云百炼。在设置里填好业务空间 ID 和 API Key 就能用；不接也可以用文字面。',
+};
+
+export const enHome = {
+  navHome: 'Home',
+  homeHowLabel: 'How it works',
+  homeStartFirst: 'Prepare your first interview', homeSetupVoice: 'Set up voice',
+  homeStep1Title: 'The job and your resume', homeStep1Text: 'Paste the job description and add your resume: a PDF, a Word file or plain text.',
+  homeStep2Title: 'Score the resume', homeStep2Text: 'The job match counts 65% and the resume itself 35%. 80 passes. Below that, revise it from the suggestions.',
+  homeStep3Title: 'Interview', homeStep3Text: 'Voice and 5 questions by default, drawn from your resume and this job.',
+  homeStep4Title: 'Review', homeStep4Text: 'The report uses only the answers you confirmed, and exports to PDF.',
+  homeNextLabel: 'Next interview', homeNextUntitled: 'Pick a role to interview for',
+  homeContinue: 'Continue preparing', homeGoStart: 'Go to start', homeSwitchRole: 'Switch role',
+  homeStatInterviews: 'Interviews', homeStatCount: '{count}', homeStatDone: '{done} finished', homeStatNoneYet: 'None yet',
+  homeStatLatest: 'Latest', homeStatLatestSub: '{date} · {role}', homeStatNoReport: 'A score appears after an interview',
+  homeStatScore: 'Resume score', homeStatScoreNone: 'Not scored yet', homeScorePass: 'Past 80. Ready to interview', homeScoreGap: '{gap} short of 80',
+  homeRecent: 'Recent interviews', homeAllReview: 'All of Review', homeRoles: 'Your roles', homeAllLibrary: 'All of Library',
+  homeRolePrepare: 'Prepare this one', homeRoleCurrent: 'Preparing', homeRoleInterviews: '{count} interviews', homeRoleNever: 'Not interviewed yet',
+  homeRoleScore: 'resume {score}', homeTrend: 'Scores of the last {count} interviews',
+  homeVoiceTitle: 'Voice interviews', homeVoiceReady: 'Model Studio realtime voice is set up.', homeVoiceUntested: 'Saved, but not tested yet. Press Test connection in Settings.', homeVoiceNone: 'Voice interviews use Alibaba Cloud Model Studio. Add the workspace ID and API key in Settings. Text interviews work without it.',
+};

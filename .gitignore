@@ -13,3 +13,4 @@ release/
 credentials/
 sessions/
 files/
+.preview/

@@ -1,239 +1,231 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/brand/logo-white.svg">
-    <img src="assets/brand/logo-black.svg" alt="职镜AI · dsh-interview-desk" width="330" height="96">
+    <img src="assets/brand/logo-black.svg" alt="职镜AI" width="330" height="96">
   </picture>
 </p>
 
-<h1 align="center">dsh-interview-desk</h1>
-<p align="center">在 DSH 里改简历、准备岗位、练习面试。</p>
+<h1 align="center">职镜AI</h1>
+
+<p align="center"><b>真实而优秀的人，永远值得被世界看见</b></p>
+
+<p align="center">DeepSeek Harness 的一个求职插件。贴上岗位要求，放进简历，评个分，面一场，再看复盘。</p>
+
 <p align="center">
-  <a href="https://github.com/minhaoliu927-lgtm/dsh-interview-desk/releases"><img alt="下载插件" src="https://img.shields.io/badge/GitHub_Releases-下载插件-202724?style=for-the-badge&logo=github"></a>
-  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-202724?style=for-the-badge"></a>
+  <a href="#三步上手">安装</a> ·
+  <a href="#语音面试">接语音</a> ·
+  <a href="#要花钱吗">要花钱吗</a> ·
+  <a href="#问答">问答</a> ·
+  <a href="#开发">开发</a>
 </p>
+
 <p align="center">
-  <a href="#安装">安装</a> · <a href="#开始使用">开始使用</a> · <a href="#实时语音面试">语音配置</a> · <a href="#常见问题">常见问题</a> · <a href="#从源码构建">开发</a>
+  <a href="https://www.npmjs.com/package/dsh-interview-desk"><img alt="npm" src="https://img.shields.io/npm/v/dsh-interview-desk?style=flat-square&color=202724&label=npm"></a>
+  <img alt="DeepSeek Harness 0.2.x" src="https://img.shields.io/badge/DeepSeek%20Harness-0.2.x-202724?style=flat-square">
+  <img alt="Mac 与 Windows 桌面版" src="https://img.shields.io/badge/Mac%20%C2%B7%20Windows-%E6%A1%8C%E9%9D%A2%E7%89%88-202724?style=flat-square">
+  <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/MIT-%E5%BC%80%E6%BA%90-202724?style=flat-square"></a>
 </p>
 
-**职镜AI** 是面向求职者的 DSH 原生插件。个人资料、目标岗位、原生聊天和模拟面试放在同一个工作台，文字分析直接使用 DSH 已配置的模型。
+<br>
 
-当前版本为 **0.1.0-dev.7 开发预览**，提供源码、自有 DSH 插件索引和 Release `.tgz`。索引使用固定 Git 提交的预构建包，安装不需要 npm 账号；npm 发布暂缓。
+## 它是什么
 
-## 可以做什么
+装在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 侧栏里的「职镜」。你想面哪个岗位，就把那份岗位要求贴进来，再放一份简历。先给简历打个分，再跟面试官练一场。默认是语音面试，5 道题，题目从你的简历和这个岗位里来。
 
-### 一份资料，准备多个目标岗位
+四个页面：**首页 · 面试 · 复盘 · 资料**。界面有中文和英文，跟着 DeepSeek Harness 的语言走。
 
-上传 PDF、DOCX、TXT 或图片，也可以粘贴文字、导入公开网页。先核对解析结果，再将确认过的简历和岗位材料用于分析。资料独立于岗位，更新简历会生成新版本，旧面试和报告继续引用当时的版本。
+AI 只会让真实的个体更加珍贵。职镜改简历只动措辞和顺序，不替你编经历；面试报告只看你自己确认过的回答。
 
-### 改简历，也说明修改依据
+<br>
 
-检查简历质量、分析岗位适配，生成完整改写稿并逐项选择采纳。判断需要引用资料，程序校验引用并计算分数；证据不足时明确说明。不会把模型建议自动当成真实经历，也没有分数解锁门槛。
+## 怎么用
 
-### 从文字问答，到实时语音
+**1. 岗位和简历。** 岗位要求直接粘贴，或者读一个公开的招聘链接。简历拖进 PDF 或 Word，显示成一张文件卡，点「预览」用系统自带的应用打开原件。
 
-每个目标岗位支持多个对话和多场面试。文字面试使用 DSH 模型；实时语音由专用音频模型主持，支持连续交谈、自动轮次、插话和字幕。结束后核对回答，再生成报告。
+**2. 简历评分。** 对照岗位占 65%，简历本身占 35%，80 分过关。每一项都附上原文里的依据。不到 80，可以照建议改一版：勾选要的改动，存成新版本再评一次；也可以自己改，或者看过分数直接去面。评一次一般要半分钟到一分半，看你在 DeepSeek Harness 里选的模型。
 
-### 把准备过程带走
+**3. 模拟面试。** 面试官在左，你在右，中间那道光跟着谁在说话变亮。可以插话、打断，也可以换成文字面试。
 
-简历版本和面试报告可导出为 DOCX 或 PDF。工作台复用 DSH 原生聊天、模型选择、历史、流式回复和工具审批，随包提供 `zhijing-career` skill 与 `zhijing_*` 聊天工具。
+**4. 复盘。** 每场面试一张卡片：继续、看报告、导出 PDF。首页能看到最近几场的分数走向，和当前简历离 80 还差多少。
 
-## 安装
+<br>
 
-已验证宿主基线为 **DSH 0.2.2-rc.1**，需要 Node.js **24.9.0 或更新版本**及 `node:sqlite`。当前验证使用 Windows DSH Desktop，以及连接同一 Host 的 Chrome、Edge。其他宿主版本和平台尚未声明兼容。
+## 三步上手
 
-### 在 DSH 搜索安装
+要求 DeepSeek Harness `0.2.2-rc.1` 及以上的 `0.2.x`。在 Mac 桌面版 `0.2.2-rc.3` 和 Windows 桌面版上用过。
 
-1. 打开 DSH 的“插件”，在“实验性插件”中启用“自定义插件索引”。
-2. 切换到“发现”，添加下面的索引地址。
-3. 搜索 `dsh-interview-desk` 或“职镜AI”，打开详情，选择开发预览版本，点击“安装”。安装完成后点击“立即启用”，从侧栏打开“职镜”。
+**1. 安装。** 打开 DeepSeek Harness 的「插件」→「添加插件」，输入包名 `dsh-interview-desk`，点安装，再点「立即启用」。
 
-```text
+也可以用命令行。桌面版先完全退出再装，装好重新打开；网页版装好后重启 `dsh web`。
+
+```bash
+dsh plugin --profile desktop add dsh-interview-desk
+```
+
+```bash
+dsh plugin --profile web add dsh-interview-desk
+```
+
+用过职镜自己的插件索引的，地址不变，装的是同一个 npm 包：
+
+```
 https://raw.githubusercontent.com/minhaoliu927-lgtm/dsh-interview-desk/main/index.json
 ```
 
-这是本项目维护的自有索引，须添加一次。DSH 的发现页搜索已配置的索引；这不表示插件已进入所有用户的默认列表。社区索引的审核与更新由维护者决定。
+**2. 打开。** 侧栏出现「职镜」，点开是首页。点「准备第一场面试」，从岗位要求开始。
 
-索引将版本固定到公开的 `plugin-dist` 分支中的完整提交，包含已构建的 Client 和文档解析模块。安装无需运行编译脚本，需要能访问 GitHub 和依赖源。不要直接将源码分支 `main` 当作已构建插件安装。
+**3. 接语音（可选）。** 想用语音面，点右上角的「语音未接入」，照下一节填好。不接也能用文字面试。
 
-### 从 Release 安装
+有新版本时，插件页会显示可更新，点一下就行；用命令行装的，重跑一次上面的命令。离线安装可以到 [Releases](https://github.com/minhaoliu927-lgtm/dsh-interview-desk/releases/latest) 下载 `.tgz`，在「添加插件」里填它的完整路径。
 
-1. 打开 [GitHub Releases](https://github.com/minhaoliu927-lgtm/dsh-interview-desk/releases)，在 **Assets** 下载 `dsh-interview-desk-0.1.0-dev.7.tgz`。
-2. 在 DSH 插件管理中选择“添加插件”，将安装包的**绝对路径**填入“包名或地址”，点击“安装”。
-3. 点击“立即启用”，从侧栏打开“职镜”。
+<br>
 
-GitHub 的 **Source code.zip / tar.gz** 是源码归档，不是插件安装包。首次安装外部依赖通常需要联网，但不需要 npm 账号。通过另一台电脑使用 DSH Web 时，`.tgz` 必须放在 **DSH Host 所在电脑**。
+## 语音面试
 
-<details>
-<summary><b>使用 CLI 安装到独立 profile</b></summary>
+文字部分用你在 DeepSeek Harness 里配好的模型。实时语音要一个能同时听和说的服务，现在接的是阿里云百炼的 Qwen-Omni-Realtime。
 
-以下 `dsh` 指你明确选定的宿主 CLI。开发验收请使用独立源码与 `DSH_HOME`，避免影响日常环境。
+点右上角的语音状态或「设置」，在设置窗里：
 
-```powershell
-$env:DSH_HOME = Join-Path (Get-Location) '.runtime/zhijing/dsh'
-dsh plugin --profile interview-test add ./dsh-interview-desk-0.1.0-dev.7.tgz
-dsh --profile interview-test --dump-config
-```
+1. **地域**：北京或新加坡，和 API Key 在同一个地域。
+2. **业务空间 ID**：百炼控制台左上角 →「业务空间详情」。只填 Key 连不上。
+3. **API Key**：只存在这台电脑的 DeepSeek Harness 凭据里，保存后不再显示。
+4. **测试连接**：面试官会说一句固定的话，通过后可以「试听」。
 
-按所选 DSH 应用的说明启动这个 profile 的 Desktop 或 Web 界面。插件注册 Host、Client、工具和 skill，本身不包含 Electron 外壳或另一份 DSH。CLI 详见 [DSH 插件发布说明](https://github.com/deepseek-ai/deepseek-harness/blob/dsh-v0.2.2-rc.1/docs/user/develop/basic/publish.zh.md)。
+右上角有四种状态：已接入、测试未通过、待测试、未接入。测试通过才算接入。没通过时，设置窗和面试页都会写出原因和代码，比如 `provider-error`，提 Issue 时带上它就行。
 
-</details>
+麦克风在开始面试时才打开。一场通话最长 30 分钟。录音不长期保存，留下的是转写和你改过的回答。
 
-### 从旧名 dsh-interview 或 dsh-zhijing 升级
+<br>
 
-`dsh-interview-desk` 是新的包名和设置标识，中文品牌仍为“职镜AI”。
+## 要花钱吗
 
-1. 结束当前任务，并记下旧插件的音频地域、业务空间、模型和启用状态。
-2. 在官方插件管理中卸载已安装的 `dsh-interview` 或 `dsh-zhijing`，然后安装并启用新包。**不要同时启用多个名称的插件。**
-3. 在新插件的官方设置中重新保存上述音频选项。默认凭据引用仍为 `ZHIJING_REALTIME_API_KEY`；同一 DSH_HOME 中已有该凭据时，无需重填密钥。曾使用自定义引用的用户应在高级选项中保持原引用。
+插件免费开源，不带任何密钥。用到模型的地方，走你自己的账号。
 
-卸载保留资料；新版本继续使用同一 `DSH_HOME/zhijing` 数据目录、原生会话关联和工具名。设置属于新的包名，因此需要重新保存。备份时请先关闭相关 Host，再保存完整插件数据目录及所需 DSH 会话。
+| | 用什么 | 不接会怎样 |
+| --- | --- | --- |
+| **简历评分、改写、报告、文字面试** | DeepSeek Harness 里已经配好的文字模型 | 这些都用不了 |
+| **语音面试** | 你自己的百炼业务空间和 API Key，按百炼的价格计费 | 换成文字面试 |
 
-## 开始使用
+「测试连接」会真的生成一句语音，可能产生一点费用。
 
-1. 在 DSH 中选好文字模型。
-2. 打开“个人资料”，导入简历、岗位描述和经历材料，核对正文并确认版本。
-3. 新建“目标岗位”，关联已确认的资料。
-4. 运行简历评分、岗位分析或改写；选择采纳内容后保存为新版本。
-5. 新建文字或语音面试，选择中文或英文及题量。语音结束后集中核对转写，确认回答再生成报告。
-6. 选择简历或报告，导出 DOCX/PDF。
+<br>
 
-工作台分析使用宿主默认文字模型；原生聊天中的工具使用当前会话选定的模型。模型不能代替你确认事实、OCR 结果或采纳修改。
-
-### 工作台与助手并排使用
-
-顶部按对话、个人资料、目标岗位、模拟面试、报告分区。列表支持搜索、筛选、排序和卡片或列表显示。目标岗位也可切换看板，拖动归档或恢复；同样提供按钮操作。报告页按真实保存的面试成绩显示最近记录。打开资料、岗位或结果后进入对象工作室，左侧是原生助手，右侧是内容；可切换前后对象、专注结果或返回列表，保留筛选和位置。
-
-总览页的助手在右侧，可展开或收起。对象对话与全局对话分开保存，资料和报告讨论继续绑定当时确认的版本；新建对话可选用新版本。展开聊天再返回时草稿保留。窄窗口默认收起助手，需要时再打开。
-
-在资料正文中选择一段文字，或选择一个已确认的完整版本，点击“交给助手”。先核对可取消的引用卡，再点击“加入对话草稿”。引用会追加到当前 DSH 输入框，保留已有草稿和附件；最后仍由你点击原生“发送消息”。选中内容本身不会请求模型，也不会替换旧面试或报告的资料版本。
-
-### 操作记录与撤销
-
-助手旁的操作记录可以打开实际保存的资料、改写或报告。可以撤销仍未被后续操作改变的岗位修改、资料绑定和简历修改；简历撤销会追加一个待核对的恢复版本，不删除历史。已提交的模型请求、报告和原生聊天历史不提供撤销。输入框外可用 Ctrl/Cmd+Z 撤销最近可恢复的操作。
-
-数据库升级到版本 4，保留原有资料、报告和会话，不补造旧操作记录。升级前可在关闭 Host 后备份完整数据目录；旧版无法直接打开升级后的数据库。
-
-安装了 `dsh-better-sidebar` 时，其页面菜单提供第二入口，点击后打开 DSH 主工作区的完整职镜AI工作台。原生会话所需的宿主插槽只在主工作区授权，因此此入口不另建一套聊天。未安装该插件时，官方侧栏入口照常使用。
-
-## 实时语音面试
-
-文字模型直接使用 DSH 的配置。实时语音需要支持双向音频的专用服务，当前接入 **阿里云百炼 Qwen-Omni-Realtime**。
-
-在 **DSH 插件管理 → 职镜AI设置** 中：
-
-1. 启用实时语音，选择北京或新加坡地域。
-2. 填写你自己的百炼业务空间 ID，选择可用的实时音频模型。
-3. 将该音频服务的 API Key 保存到 DSH 官方凭据服务。
-4. 点击“测试音频 API”，通过后点击“播放测试语音”。
-
-测试会实际生成一句短语音，显示连接和首音频耗时，最长等待 30 秒，可取消。它不会打开麦克风、读取简历或新建面试，返回的短音频仅在内存中保留，不自动播放。
-
-开始面试后才申请麦克风权限。支持 16 kHz 单声道输入、24 kHz 输出，单次通话最长 30 分钟。暂停、结束、离开页面或网络故障会停止采集和播放；失败后可选择文字面试，不会自动重连或重发回答。
-
-专用音频密钥由 DSH 保管，不写入插件业务数据库，不返回浏览器，也不复制文字模型密钥。当前只支持所选地域的官方端点。接口测试通过后，仍应在实际设备检查麦克风、字幕、听感和打断效果。
-
-## 数据与隐私
-
-- **本地资料**：业务记录、资料版本和导入原件位于所选 `DSH_HOME/zhijing`；原生聊天和凭据由 DSH 管理。停用取消任务，卸载保留资料。
-- **模型请求**：分析时会把选定资料发送给 DSH 文字模型；实时面试会把本次冻结资料、已有转写和音频发送给所选音频服务。模型与音频服务可能产生费用。
-- **语音记录**：不长期保存原始录音，保留供应商转写、用户修订和最终回答。报告仅使用确认过的回答，不把 AI 参考答案当作用户能力证据。
-- **来源核对**：网页导入只读取公开 HTTP/HTTPS 内容，不使用浏览器登录状态。受限网页请自行完成验证，再上传截图；本地及私有网络地址会被拒绝。
-- **文件限制**：单个文件最多 25 MiB。图片 OCR 需要 Windows Host 的已安装识别语言。扫描 PDF 或不足以提取的文字会提示截图 OCR 或粘贴原文。
-
-本地存储不代表模型离线运行。当前没有逐条永久删除或完整备份恢复界面；请勿手工修改 SQLite 版本记录。请求失败时不会伪造分数或报告。
-
-## 常见问题
+## 问答
 
 <details>
-<summary><b>在 DSH 搜索 dsh-interview-desk 就能安装吗？</b></summary>
+<summary><b>上传后为什么看不到识别出的文字？</b></summary>
+<br>
 
-先在“发现”中添加上面的自有索引，再搜索 `dsh-interview-desk` 或“职镜AI”即可找到对应条目。未添加索引时不保证搜索结果。npm 尚未发布，因此“添加插件”中只输入包名的 npm 安装方式暂不可用；也可下载 Release `.tgz` 安装。
+你看到的是文件本身，点「预览」就能对着原件看。评分和面试用的是从文件里读出的文字，收在资料页的「识别出的文字（评分和面试用）」里，需要时再展开。
 
 </details>
 
 <details>
-<summary><b>为什么文字模型可用，语音仍需要配置？</b></summary>
+<summary><b>图片和扫描件能导入吗？</b></summary>
+<br>
 
-文字模型未必支持实时音频。简历、评分和报告沿用 DSH 文字模型；实时通话使用单独的音频服务及其凭据。未配置时可继续使用文字面试。
-
-</details>
-
-<details>
-<summary><b>语音测试通过，但通话没有声音或无法识别？</b></summary>
-
-测试按钮验证接口连接及音频、文字输出，不采集麦克风。请检查设备、音量、浏览器权限及安全上下文（HTTPS 或 localhost），并确认配置已经保存。错误提示会区分配置、鉴权、权限、网络、限流和服务异常。
+文字型的 PDF 和 Word 都可以。图片和扫描件要先做文字识别：Windows 用系统自带的识别，Mac 上暂时还不行，可以先粘贴正文。单个文件最多 25 MB。
 
 </details>
 
 <details>
-<summary><b>文字面试里的朗读和录音，与实时通话有什么区别？</b></summary>
+<summary><b>改简历会不会替我编经历？</b></summary>
+<br>
 
-文字面试还提供按轮录音和本地朗读。识别复用 DSH 官方语音服务，朗读使用设备本地声音，音质取决于系统；这不是实时音频模型。宿主未准备识别能力时，需要在官方“语音输入”设置中完成准备。录音最多 120 秒、WAV 最多 4 MiB，转写可编辑，确认后才提交。
+不会。改写只动措辞、顺序和格式；改出了原文没有的事实、数字或技能，这一版就不用。评分里的每条依据，都要能在你的原文里找到。
 
 </details>
 
 <details>
-<summary><b>与 DeepSeek 官方有什么关系？</b></summary>
+<summary><b>评分报错怎么办？</b></summary>
+<br>
 
-这是社区开发的第三方插件，基于 DSH 公开扩展接口工作，不代表 DeepSeek 官方。DSH 由用户自行安装，第三方模型服务适用各自条款。
+提示里会带一个代码，比如 `MODEL_FAILED`。多数时候再评一次就好。一直不行，换个模型试试；推理型模型会先想一会儿，明显更慢。
 
 </details>
 
-## 验证范围
+<details>
+<summary><b>我的东西存在哪？</b></summary>
+<br>
 
-开发固定宿主提交为 `66491b05e3f05ad35bcdd4f6cd7ed26041d9e3db`。自动测试、真实模型和用户设备反馈分别记录，不把其中一项替代其余项目。
+都在本机 DeepSeek Harness 的数据目录里（默认 `~/.dsh/zhijing/`）。API Key 由 DeepSeek Harness 的凭据保管，不进插件的数据库，也不进安装包。没有云端，没有账号系统。
 
-| 范围 | 已有验证 |
-| --- | --- |
-| Windows DSH Desktop | 插件安装、设置保存、工作台与文字模型；实际音频 API 返回语音和文字，项目使用者已反馈语音测试通过 |
-| Chrome / Edge Web | 原生会话、流式回复、工具执行与历史一致性；实时音频前端有模拟设备回归 |
-| 简历与报告 | 中英文合成资料的真实模型评分、岗位分析、改写、单题面试与报告；导出和引用校验有自动化测试 |
-| 资料与生命周期 | 不可变版本、迁移、重启、取消、停用、卸载保留资料及安装包审计 |
+分析时，选定的资料会发给你在 DeepSeek Harness 里配的模型；语音面试时，这一场的资料和你的声音会发给百炼。
 
-本版仍为开发预览。完整多平台、多语言语音、权限拒绝、网络恢复和整场报告验收尚未全部覆盖；不声明所有 DSH 版本、设备或模型均兼容。
+</details>
 
-## 从源码构建
+<details>
+<summary><b>版本号怎么变成 0.2.0 了？</b></summary>
+<br>
 
-需要 Node.js 24.9.0+ 和 pnpm；验证使用 Node.js 24.19.0、pnpm 11.28.5。源码包含字体和材料解析模块，不依赖旧桌面工程。
+以前的 `0.1.0-dev.N` 是开发预览，npm 上只发过 `0.1.0-dev.11`。从 `0.2.0` 起，GitHub 上的版本和 npm 上的一一对应，往后是 `0.2.1`、`0.3.0` 这样往上走。
 
-```sh
-git clone https://github.com/minhaoliu927-lgtm/dsh-interview-desk.git
-cd dsh-interview-desk
+</details>
+
+<details>
+<summary><b>以前装过 dsh-interview 或 dsh-zhijing？</b></summary>
+<br>
+
+先在插件页卸载旧名的插件，再装 `dsh-interview-desk`。资料还在原来的数据目录，语音设置要在设置窗里重新保存一次。不要同时启用两个名字的插件。
+
+</details>
+
+<details>
+<summary><b>这是 DeepSeek 做的吗？</b></summary>
+<br>
+
+不是，是社区插件。文字部分用你在 DeepSeek Harness 里配置的模型，语音用你自己的百炼账号，各自按自己的条款计费。
+
+</details>
+
+<br>
+
+## 开发
+
+需要 Node.js 24.9 及以上和 pnpm。
+
+```bash
 pnpm install --frozen-lockfile
-node scripts/fetch-font.mjs --verify-only
-pnpm test
-pnpm run build
-node scripts/audit-package.mjs
-pnpm pack --pack-destination ./release
+pnpm test                        # 全部测试
+pnpm run build                   # 打包界面，生成文档解析模块
+node scripts/audit-package.mjs   # 检查安装包里只有该有的文件
+node scripts/preview/build.mjs   # 不开 DeepSeek Harness 也能看界面
 ```
 
-构建需要允许 esbuild 的安装步骤。Windows 出现依赖硬链接错误时，可在独立目录安装时加 `--package-import-method=copy`。字体已随源码提供，正常构建不需要重新下载；安装插件包也无需本地编译。
+预览打包到 `.preview/`，用本地静态服务打开 `index.html`（麦克风需要 http，不能直接双击）。地址参数：`theme=dark` 深色，`lang=en` 英文，`seed=history` 有面试记录的老用户，`voice=off` / `voice=fail` 语音未接入 / 测试没通过，`page=interview` 直接打开某一页。预览里的宿主是假的，不随插件发布。Windows 上装依赖遇到硬链接报错，加 `--package-import-method=copy`。
+
+**发版。** 改 `package.json` 里的版本号，合进 `main`。GitHub Actions 会构建、跑测试、检查安装包，然后发到 npm，打 `v版本号` 标签、建 Release（附 `.tgz` 和 `.sha256`），最后把 `index.json` 改成新版本。npm 上已经有的版本不会再发一次；中途失败，在 Actions 里重跑「Release」就会接着做没做完的步骤。Release 的说明取自改版本号的那次提交。带 `-` 的预发布版本（如 `0.3.0-rc.1`）发到 npm 的 `next` 标签，不影响 `latest`。
+
+发包用 npm 的 Trusted Publishing，仓库里不存 npm token。维护者只需要在 npmjs.com 的包设置里加一次：Trusted Publisher → GitHub Actions，填 `minhaoliu927-lgtm`、`dsh-interview-desk`、`release.yml`，Environment 留空。
 
 | 目录 | 内容 |
 | --- | --- |
-| `client/` | 原生聊天嵌入、工作台、语音及官方设置界面 |
-| `src/` | Host、业务存储、模型调用、材料解析与实时音频 |
-| `skills/` | 随包求职 skill |
+| `client/` | 界面：首页、面试、复盘、资料、面试间、语音、设置窗 |
+| `src/` | Host 接口、资料存储、模型调用、文档解析、实时语音 |
+| `skills/` | 随插件提供的求职 skill |
 | `locale/` | 中文和英文文案 |
-| `scripts/` | 构建、许可审计和白名单源码导出 |
-| `test/` | 业务、生命周期与界面测试 |
-| `assets/` | 自有标志和保留原许可的 Noto 字体 |
+| `scripts/` | 打包、安装包审计、公开源码导出、插件索引 |
+| `test/` | 测试 |
+| `assets/` | 标志和 Noto 中文字体（保留原许可） |
+| `.github/workflows/` | CI 和自动发版 |
 
-`scripts/prepare-source.mjs --out <新目录>` 可生成带 SHA-256 清单的干净源码；`--verify <目录>` 核对内容。安装包不包含原项目 Git 历史、运行数据、个人资料或密钥。公开代码不附带可用 API Key，请在自己的宿主中配置。
+`src/materials/runtime/` 是从 `src/materials/vendor/` 生成的，改了 vendor 要重新构建。改了 `src/` 要重启 DeepSeek Harness。
 
-发布索引时，先将已审计的 `.tgz` 内容提交到 `plugin-dist`，再运行 `node scripts/update-index.mjs <完整提交SHA> <Unix秒>` 更新 `index.json`。每个版本指向不可变提交；源码和构建产物分支分别保留，旧版本不覆盖。
+<br>
 
-## 反馈与贡献
+## 反馈
 
-欢迎通过 [Issues](https://github.com/minhaoliu927-lgtm/dsh-interview-desk/issues) 提交问题或建议，说明 DSH 版本、平台、操作步骤和已脱敏的错误提示。请勿上传 API Key、完整个人简历、凭据文件或未经检查的日志。
+有问题欢迎提 [Issue](https://github.com/minhaoliu927-lgtm/dsh-interview-desk/issues)，写上 DeepSeek Harness 版本、系统、怎么操作的和看到的提示。别贴 API Key、完整简历和没检查过的日志。
 
-## 许可与致谢
+## 致谢
 
-自有代码使用 [MIT](LICENSE)。第三方代码、依赖和字体保留各自许可，详见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：开放的插件系统，职镜才装得进去。
+- [dsh-media-desk](https://github.com/woniuniuniu/dsh-media-desk)：设置窗、助手栏和插件索引的做法参考了它。
+- [dsh-Go](https://github.com/ccch1mneyyy/dsh-Go)：这份 README 的写法参考了它和 dsh-media-desk。
+- [Noto CJK](https://github.com/notofonts/noto-cjk)：导出 PDF 用的中文字体，保留 SIL Open Font License 1.1。
 
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：原生宿主与公开扩展接口。
-- [dsh-media-desk](https://github.com/woniuniuniu/dsh-media-desk)：自有索引、可收起助手、上下文引用与结果并排交互参考。职镜AI仍使用DSH原生会话与自己的求职业务实现。
-- [dsh-Go](https://github.com/ccch1mneyyy/dsh-Go)：README 的内容组织参考；本仓库文案与品牌素材独立编写。
-- [Noto CJK](https://github.com/notofonts/noto-cjk)：中文 PDF 字体，保留 SIL Open Font License 1.1。
+第三方代码和字体的许可见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-<p align="center"><sub>职镜AI · dsh-interview-desk · 用真实经历准备下一场面试。</sub></p>
+<br>
+
+<p align="center"><sub><a href="LICENSE">MIT</a> · 社区插件，与 DeepSeek 无关。DeepSeek Harness 的名称和标识归其所有者所有。</sub></p>

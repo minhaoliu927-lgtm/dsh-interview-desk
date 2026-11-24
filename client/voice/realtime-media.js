@@ -45,6 +45,28 @@ function decodeBase64(text) {
   return Uint8Array.from(binary, character => character.charCodeAt(0));
 }
 
+/**
+ * Read-only loudness tap for the call visuals. It observes the existing audio
+ * graph, never changes what is sent or played, and keeps no samples.
+ */
+function createMeter(audioContext) {
+  try {
+    if (typeof audioContext?.createAnalyser !== 'function') return null;
+    const node = audioContext.createAnalyser();
+    node.fftSize = 512;
+    const samples = new Uint8Array(node.fftSize);
+    return {
+      node,
+      read() {
+        node.getByteTimeDomainData(samples);
+        let sum = 0;
+        for (const sample of samples) { const value = (sample - 128) / 128; sum += value * value; }
+        return Math.min(1, Math.sqrt(sum / samples.length) * 3.2);
+      },
+    };
+  } catch { return null; }
+}
+
 /** Owns exactly one microphone and playback queue. Provider/VAD/business events live elsewhere. */
 export function createRealtimeMedia({
   sendAudio, onState = () => {}, mediaDevices = globalThis.navigator?.mediaDevices,
@@ -56,6 +78,7 @@ export function createRealtimeMedia({
   if (typeof sendAudio !== 'function' || !Number.isInteger(maxQueuedFrames) || maxQueuedFrames < 1 || !Number.isFinite(maxPlaybackSeconds) || maxPlaybackSeconds <= 0 || !Number.isFinite(flushTimeoutMs) || flushTimeoutMs < 1 || flushTimeoutMs > 1000) throw new Error('INVALID_MEDIA_OPTIONS');
   let phase = 'idle', error = null, muted = false, lifetime = 0, scope = null;
   let context, stream, source, capture, silent, workletUrl, encoder;
+  let inputMeter = null, outputMeter = null;
   let partial = new Uint8Array(0), frames = [], sending = false, sequence = 0;
   let drainingPromise, finishingPromise;
   const stoppedTracks = new WeakSet();
@@ -83,6 +106,7 @@ export function createRealtimeMedia({
     if (capture) { capture.port.onmessage = null; capture.port.close?.(); }
     stopCapture();
     const oldContext = context;
+    detach(inputMeter?.node); detach(outputMeter?.node); inputMeter = outputMeter = null;
     context = stream = source = capture = silent = encoder = undefined;
     if (workletUrl) { urlApi.revokeObjectURL(workletUrl); workletUrl = undefined; }
     documentImpl?.removeEventListener('visibilitychange', onVisibility);
@@ -159,6 +183,8 @@ export function createRealtimeMedia({
       silent = ownedContext.createGain(); silent.gain.value = 0;
       capture.port.onmessage = event => acceptFrame(event.data, generation, currentScope.signal);
       source.connect(capture); capture.connect(silent); silent.connect(ownedContext.destination);
+      inputMeter = createMeter(ownedContext); outputMeter = createMeter(ownedContext);
+      if (inputMeter) { try { source.connect(inputMeter.node); } catch { inputMeter = null; } }
       for (const track of stream.getTracks()) track.addEventListener?.('ended', () => { if (generation === lifetime && phase === 'listening') void fail('microphone-ended'); }, { once: true });
       documentImpl?.addEventListener('visibilitychange', onVisibility);
       if (documentImpl?.hidden) { await close(); return; }
@@ -182,10 +208,19 @@ export function createRealtimeMedia({
       const buffer = context.createBuffer(1, samples, sampleRate), output = buffer.getChannelData(0), input = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
       for (let i = 0; i < samples; i++) output[i] = input.getInt16(i * 2, true) / 32768;
       const node = context.createBufferSource(); node.buffer = buffer; node.connect(context.destination);
+      if (outputMeter) { try { node.connect(outputMeter.node); } catch { outputMeter = null; } }
       node.onended = () => { playback.delete(node); detach(node); publish(); };
       playback.add(node); node.start(startAt); nextPlayAt = startAt + samples / sampleRate; publish();
       return true;
     } catch { void fail('invalid-playback-audio'); return false; }
   }
-  return { start, close, finishCapture, setMuted, interrupt, play, snapshot, get playbackEpoch() { return playbackEpoch; } };
+  /** Instantaneous 0..1 loudness for visuals only; zero whenever nothing is live. */
+  function levels() {
+    if (phase !== 'listening') return { input: 0, output: 0, available: false };
+    try {
+      return { input: muted || !inputMeter ? 0 : inputMeter.read(), output: outputMeter && playback.size ? outputMeter.read() : 0,
+        available: Boolean(inputMeter || outputMeter) };
+    } catch { return { input: 0, output: 0, available: false }; }
+  }
+  return { start, close, finishCapture, setMuted, interrupt, play, snapshot, levels, get playbackEpoch() { return playbackEpoch; } };
 }

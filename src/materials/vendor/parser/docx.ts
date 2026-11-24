@@ -12,6 +12,7 @@ import { DocumentParseError, normalizeDocument, type RawDocxBlock } from './norm
 import { isFileSystemError } from './file-errors.ts';
 
 const WORD_NAMESPACE = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const MARKUP_COMPATIBILITY_NAMESPACE = 'http://schemas.openxmlformats.org/markup-compatibility/2006';
 const CONTENT_TYPES_NAMESPACE = 'http://schemas.openxmlformats.org/package/2006/content-types';
 const RELATIONSHIPS_NAMESPACE = 'http://schemas.openxmlformats.org/package/2006/relationships';
 const OFFICE_RELATIONSHIPS_NAMESPACE = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -26,6 +27,32 @@ const MAX_TABLE_DEPTH = 8;
 const AUXILIARY_PART = /^word\/(header|footer)([1-9]|[12]\d|3[0-2])\.xml$/u;
 const AUXILIARY_RELATIONSHIPS = /^word\/_rels\/(header|footer)([1-9]|[12]\d|3[0-2])\.xml\.rels$/u;
 const REVIEW_REASON = 'unsupported-structure-review-required';
+// Parts that Word, WPS and LibreOffice routinely add. They are admitted but never read for text.
+const PASSIVE_PARTS = [
+  /^docProps\/custom\.xml$/u,
+  /^docProps\/thumbnail\.(?:jpe?g|png|emf|wmf)$/iu,
+  /^customXml\/(?:item|itemProps)\d{1,3}\.xml$/u,
+  /^customXml\/_rels\/item\d{1,3}\.xml\.rels$/u,
+  /^word\/(?:stylesWithEffects|footnotes|endnotes|comments|commentsExtended|commentsIds|commentsExtensible|people)\.xml$/u,
+  /^word\/_rels\/(?:footnotes|endnotes|comments)\.xml\.rels$/u,
+  /^word\/glossary\/(?:document|styles|stylesWithEffects|settings|webSettings|fontTable|numbering)\.xml$/u,
+  /^word\/glossary\/_rels\/document\.xml\.rels$/u,
+  /^word\/glossary\/theme\/theme\d{1,3}\.xml$/u,
+  /^word\/diagrams\/(?:data|layout|quickStyle|colors|drawing)\d{1,3}\.xml$/u,
+  /^word\/diagrams\/_rels\/(?:data|drawing)\d{1,3}\.xml\.rels$/u,
+  /^word\/fonts\/[^/]+\.(?:odttf|ttf|otf)$/iu,
+  /^(?:customXml|customXml\/_rels|word\/glossary|word\/glossary\/_rels|word\/glossary\/theme|word\/diagrams|word\/diagrams\/_rels|word\/fonts)\/$/u,
+];
+const MEDIA_PART = /^word\/(?:glossary\/)?media\/[^/]+\.(?:png|jpe?g|jfif|gif|bmp|tiff?|emf|wmf|svg|wdp|webp|ico)$/iu;
+const MICROSOFT_RELATIONSHIPS = new Map([
+  ['http://schemas.microsoft.com/office/2007/relationships/stylesWithEffects', /^word\/(?:glossary\/)?stylesWithEffects\.xml$/u],
+  ['http://schemas.microsoft.com/office/2011/relationships/commentsExtended', /^word\/commentsExtended\.xml$/u],
+  ['http://schemas.microsoft.com/office/2016/09/relationships/commentsIds', /^word\/commentsIds\.xml$/u],
+  ['http://schemas.microsoft.com/office/2018/08/relationships/commentsExtensible', /^word\/commentsExtensible\.xml$/u],
+  ['http://schemas.microsoft.com/office/2011/relationships/people', /^word\/people\.xml$/u],
+  ['http://schemas.microsoft.com/office/2007/relationships/diagramDrawing', /^word\/diagrams\/drawing\d{1,3}\.xml$/u],
+  ['http://schemas.microsoft.com/office/2007/relationships/hdphoto', MEDIA_PART],
+]);
 
 interface Relationship {
   type: string;
@@ -206,9 +233,9 @@ function inspectContentTypes(xml: string): Map<string, string> {
 
 function relationshipOwner(name: string): string {
   if (name === '_rels/.rels') return '';
-  const match = /^word\/_rels\/([^/]+)\.rels$/u.exec(name);
+  const match = /^(word\/(?:glossary\/|diagrams\/)?|customXml\/)_rels\/([^/]+)\.rels$/u.exec(name);
   if (!match) unsafe();
-  return `word/${match[1]}`;
+  return `${match[1]}${match[2]}`;
 }
 
 function inspectRelationships(xml: string, owner: string, entries: Set<string>): Relationships {
@@ -229,7 +256,8 @@ function inspectRelationships(xml: string, owner: string, entries: Set<string>):
     const mode = (attributeValue(tag, 'TargetMode') ?? '').trim().toLowerCase();
     if (!id || id.length > 200 || relationships.has(id) || !rawTarget || !['', 'internal', 'external'].includes(mode)) unsafe();
     if (type === `${OFFICE_RELATIONSHIPS_NAMESPACE}/hyperlink`) {
-      if (owner !== 'word/document.xml' && !AUXILIARY_PART.test(owner)) unsafe();
+      if (owner !== 'word/document.xml' && !AUXILIARY_PART.test(owner)
+        && !/^word\/(?:footnotes|endnotes|comments|glossary\/document)\.xml$/u.test(owner)) unsafe();
       if (mode === 'external') {
         if (!isPassiveTarget(rawTarget)) unsafe();
         relationships.set(id, { type, target: rawTarget, external: true });
@@ -240,6 +268,9 @@ function inspectRelationships(xml: string, owner: string, entries: Set<string>):
       }
       return;
     }
+    // Documents made from a template name it here. It is recorded by Word and never followed by this parser.
+    if (mode === 'external' && type === `${OFFICE_RELATIONSHIPS_NAMESPACE}/attachedTemplate` && owner === 'word/settings.xml'
+      && rawTarget.length <= 2048 && !/[\x00-\x1f\x7f]/u.test(rawTarget)) return;
     if (mode === 'external') unsafe();
     const target = resolvePart(owner, rawTarget);
     if (!entries.has(target) || !isAllowedRelationship(type, owner, target)) unsafe();
@@ -254,15 +285,26 @@ function isAllowedRelationship(type: string, owner: string, target: string): boo
   if (owner === '') {
     return (type === `${OFFICE_RELATIONSHIPS_NAMESPACE}/officeDocument` && target === 'word/document.xml')
       || (type === `${RELATIONSHIPS_NAMESPACE}/metadata/core-properties` && target === 'docProps/core.xml')
-      || (type === `${OFFICE_RELATIONSHIPS_NAMESPACE}/extended-properties` && target === 'docProps/app.xml');
+      || (type === `${OFFICE_RELATIONSHIPS_NAMESPACE}/extended-properties` && target === 'docProps/app.xml')
+      || (type === `${OFFICE_RELATIONSHIPS_NAMESPACE}/custom-properties` && target === 'docProps/custom.xml')
+      || (type === `${RELATIONSHIPS_NAMESPACE}/metadata/thumbnail` && /^docProps\/thumbnail\.(?:jpe?g|png|emf|wmf)$/iu.test(target));
   }
+  const passive = MICROSOFT_RELATIONSHIPS.get(type);
+  if (passive) return passive.test(target);
   const kind = type.startsWith(`${OFFICE_RELATIONSHIPS_NAMESPACE}/`) ? type.slice(OFFICE_RELATIONSHIPS_NAMESPACE.length + 1) : '';
   if (kind === 'header' || kind === 'footer') {
     return owner === 'word/document.xml' && AUXILIARY_PART.test(target) && target.startsWith(`word/${kind}`);
   }
-  if (['styles', 'numbering', 'settings', 'fontTable', 'webSettings'].includes(kind)) return target === `word/${kind}.xml`;
-  if (kind === 'theme') return /^word\/theme\/theme\d+\.xml$/u.test(target);
-  if (kind === 'image') return /^word\/media\/[^/]+\.(?:png|jpe?g|gif|bmp|tiff?)$/iu.test(target);
+  const folder = owner.startsWith('word/glossary/') ? 'word/glossary' : 'word';
+  if (['styles', 'numbering', 'settings', 'fontTable', 'webSettings'].includes(kind)) return target === `${folder}/${kind}.xml`;
+  if (kind === 'theme') return new RegExp(`^${folder}/theme/theme\\d+\\.xml$`, 'u').test(target);
+  if (kind === 'image') return MEDIA_PART.test(target);
+  if (['footnotes', 'endnotes', 'comments'].includes(kind)) return owner === 'word/document.xml' && target === `word/${kind}.xml`;
+  if (kind === 'glossaryDocument') return owner === 'word/document.xml' && target === 'word/glossary/document.xml';
+  if (kind === 'customXml') return /^customXml\/item\d{1,3}\.xml$/u.test(target);
+  if (kind === 'customXmlProps') return /^customXml\/item\d{1,3}\.xml$/u.test(owner) && /^customXml\/itemProps\d{1,3}\.xml$/u.test(target);
+  if (kind === 'font') return owner.endsWith('fontTable.xml') && /^word\/fonts\/[^/]+\.(?:odttf|ttf|otf)$/iu.test(target);
+  if (['diagramData', 'diagramLayout', 'diagramQuickStyle', 'diagramColors'].includes(kind)) return /^word\/diagrams\/(?:data|layout|quickStyle|colors)\d{1,3}\.xml$/u.test(target);
   return false;
 }
 
@@ -321,11 +363,22 @@ function extractDocumentBlocks(xml: string, sourcePart: string, relationships: R
   let topTable = 0, topParagraph = 0, paragraphOrder = 0, textDepth = 0, instructionDepth = 0, totalText = 0;
   let instruction = '';
   let fieldInstruction = '';
+  // Word and WPS store every text box twice: the modern shape in mc:Choice and a VML copy in
+  // mc:Fallback. Read the copy only when the choice yielded no text, so a box is imported once.
+  const alternates: Array<{ textBefore: number; paragraphsBefore: number; choiceText: boolean }> = [];
+  let skipped = 0;
   const parser = strictParser();
   const review = (reason: string): void => { quality.add(REVIEW_REASON); quality.add(reason); };
   parser.on('opentag', (tag) => {
+    if (skipped > 0) { skipped += 1; return; }
     if (ancestors.length === 0 && (tag.uri !== WORD_NAMESPACE || tag.local !== expectedRoot)) unsafe();
     if ((tag.prefix === 'w' && tag.uri !== WORD_NAMESPACE) || /^(?:OLEObject|object|control)$/iu.test(tag.local)) unsafe();
+    if (tag.uri === MARKUP_COMPATIBILITY_NAMESPACE) {
+      if (tag.local === 'AlternateContent') alternates.push({ textBefore: totalText, paragraphsBefore: paragraphOrder, choiceText: false });
+      const alternate = alternates.at(-1);
+      if (tag.local === 'Choice' && alternate) { alternate.textBefore = totalText; alternate.paragraphsBefore = paragraphOrder; }
+      if (tag.local === 'Fallback' && alternate?.choiceText) { quality.add('alternate-content-fallback-skipped'); skipped = 1; return; }
+    }
     if (tag.uri !== WORD_NAMESPACE) {
       if (['AlternateContent', 'Choice', 'Fallback'].includes(tag.local)) review('alternate-content-source-order');
       else review('unsupported-namespace-text-not-imported');
@@ -411,6 +464,7 @@ function extractDocumentBlocks(xml: string, sourcePart: string, relationships: R
     ancestors.push({ uri: tag.uri, local: tag.local });
   });
   const collectText = (text: string): void => {
+    if (skipped > 0) return;
     if (instructionDepth > 0) instruction += text;
     if (textDepth > 0) {
       const paragraph = paragraphs.at(-1);
@@ -423,7 +477,13 @@ function extractDocumentBlocks(xml: string, sourcePart: string, relationships: R
   parser.on('text', collectText);
   parser.on('cdata', collectText);
   parser.on('closetag', (tag) => {
+    if (skipped > 0) { skipped -= 1; return; }
     ancestors.pop();
+    if (tag.uri === MARKUP_COMPATIBILITY_NAMESPACE) {
+      const alternate = alternates.at(-1);
+      if (tag.local === 'Choice' && alternate && (totalText > alternate.textBefore || paragraphOrder > alternate.paragraphsBefore)) alternate.choiceText = true;
+      if (tag.local === 'AlternateContent') alternates.pop();
+    }
     if (tag.uri !== WORD_NAMESPACE) return;
     const table = tables.at(-1);
     switch (tag.local) {
@@ -529,9 +589,10 @@ function isAllowedEntry(name: string): boolean {
     /^word\/(?:document|styles|numbering|settings|fontTable|webSettings)\.xml$/u.test(name) ||
     AUXILIARY_PART.test(name) ||
     AUXILIARY_RELATIONSHIPS.test(name) ||
-    /^word\/_rels\/(?:document|styles|numbering|settings|fontTable)\.xml\.rels$/u.test(name) ||
+    /^word\/(?:glossary\/)?_rels\/(?:document|styles|numbering|settings|fontTable)\.xml\.rels$/u.test(name) ||
     /^word\/theme\/theme\d+\.xml$/u.test(name) ||
-    /^word\/media\/[^/]+\.(?:png|jpe?g|gif|bmp|tiff?)$/iu.test(name) ||
-    /^(?:_rels|docProps|word|word\/_rels|word\/theme|word\/media)\/$/u.test(name)
+    MEDIA_PART.test(name) ||
+    PASSIVE_PARTS.some(pattern => pattern.test(name)) ||
+    /^(?:_rels|docProps|word|word\/_rels|word\/theme|word\/media|word\/glossary\/media)\/$/u.test(name)
   );
 }

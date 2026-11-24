@@ -1,0 +1,80 @@
+/*
+ * Shell pieces shared by the prepare flow and the interview room, plus the
+ * shape language (pill buttons, softer corners) applied to the workbench.
+ */
+.zj-immersive .zj-main {
+  background: var(--zj-bg);
+}
+.zj-slim {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 57px;
+  padding: 8px 32px;
+  border-bottom: 1px solid var(--zj-line);
+}
+.zj-slim .zj-brand {
+  padding: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.zj-immersive .zj-task-card {
+  margin: 10px 32px;
+}
+
+.zj-btn {
+  min-height: 36px;
+  padding: 0 18px;
+  border-color: var(--zj-edge);
+  border-radius: 18px;
+  background: transparent;
+  transition: border-color 0.2s ease-out;
+}
+.zj-btn:hover {
+  border-color: var(--zj-ink);
+}
+.zj-btn.primary {
+  color: var(--zj-on-accent);
+  font-weight: 600;
+}
+.zj-btn.primary:hover {
+  border-color: var(--zj-ink);
+}
+.zj-btn.small {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 15px;
+}
+.zj-btn.quiet {
+  border-color: transparent;
+}
+.zj-btn.quiet:hover {
+  border-color: transparent;
+  color: var(--zj-ink);
+}
+.zj-btn[aria-pressed='true']:not(.primary) {
+  border-color: var(--zj-accent);
+  color: var(--zj-accent);
+}
+.zj-form input,
+.zj-form textarea,
+.zj-form select,
+.zj-select {
+  border-radius: 12px;
+}
+.zj-card,
+.zj-paper,
+.zj-dialog {
+  border-radius: 16px;
+}
+.zj-error {
+  line-height: 1.6;
+}
+@media (max-width: 760px) {
+  .zj-slim {
+    padding: 8px 16px;
+  }
+}

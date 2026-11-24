@@ -21,6 +21,7 @@ export function createApi(fetchImpl = globalThis.fetch.bind(globalThis)) {
     if (!response.ok || envelope?.ok !== true) {
       throw Object.assign(new Error(envelope?.error?.message || `HTTP ${response.status}`), {
         code: envelope?.error?.code || 'REQUEST_FAILED',
+        ...(typeof envelope?.error?.detail === 'string' ? { detail: envelope.error.detail } : {}),
       });
     }
     return envelope.data;
@@ -67,4 +68,21 @@ export function saveDownload({ blob, filename }, documentImpl = document, urlApi
   anchor.download = filename;
   anchor.click();
   setTimeout(() => urlApi.revokeObjectURL(url), 1000);
+}
+
+/**
+ * Open an uploaded original. The Host opens a read-only copy with the system's
+ * default app (Preview, Word, an image viewer). Where the Host cannot, the file
+ * opens in a browser tab when one is allowed, and downloads otherwise.
+ */
+export async function openOriginalFile(api, versionId, { windowImpl = globalThis.window, urlApi = URL, documentImpl = globalThis.document, later = setTimeout } = {}) {
+  try { return await api.request('material.open', { versionId }); }
+  catch (error) { if (error?.code !== 'MATERIALS_OPEN_UNAVAILABLE') throw error; }
+  const file = await api.original(versionId);
+  const url = urlApi.createObjectURL(file.blob);
+  let opened = null;
+  try { opened = windowImpl?.open?.(url, '_blank') ?? null; } catch { opened = null; }
+  if (!opened) saveDownload(file, documentImpl, urlApi);
+  later(() => urlApi.revokeObjectURL(url), 60_000);
+  return { opened: Boolean(opened), filename: file.filename };
 }

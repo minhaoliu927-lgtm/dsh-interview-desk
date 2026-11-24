@@ -275,8 +275,12 @@ function childEnvironment(env: NodeJS.ProcessEnv, cwd: string): NodeJS.ProcessEn
     result[key] = value;
   }
   for (const key of ['TEMP', 'TMP', 'USERPROFILE', 'HOME', 'APPDATA', 'LOCALAPPDATA']) result[key] = cwd;
+  // An Electron host is its own Node executable only in Node mode. Without this flag the
+  // child starts a second app instance, prints nothing and the reply is rejected.
+  if (env.ELECTRON_RUN_AS_NODE === '1') result.ELECTRON_RUN_AS_NODE = '1';
   return result;
 }
+export { childEnvironment as parserChildEnvironment };
 function receipt(file: string): Record<string, unknown> | undefined {
   if (!fs.existsSync(file)) return;
   regular(file); if (fs.statSync(file).size > 16384) return fail('PARSER_PLATFORM_RECEIPT_INVALID');

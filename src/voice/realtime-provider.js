@@ -7,9 +7,19 @@
  * https://www.alibabacloud.com/help/en/model-studio/server-events
  */
 export class RealtimeError extends Error {
-  constructor(code, message, status = 400) {
+  constructor(code, message, status = 400, detail) {
     super(message); this.name = 'RealtimeError'; this.code = code; this.status = status;
+    if (detail !== undefined) this.detail = detail;
   }
+}
+/**
+ * The provider's own error code (invalid_value, InvalidApiKey, Throttling.RateQuota),
+ * kept only when it is short, starts with a letter and has no digits, so neither a
+ * key nor any request detail can pass through. It tells a wrong key from a
+ * rejected setting without exposing the provider's message.
+ */
+export function providerErrorCode(value) {
+  return typeof value === 'string' && /^[A-Za-z][A-Za-z_.-]{1,47}$/u.test(value) ? value : undefined;
 }
 const error = (code, message, status) => new RealtimeError(code, message, status);
 // Inspect only an allowlisted transport code/status; never expose response bodies,
@@ -35,6 +45,10 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 const id = value => typeof value === 'string' && value.length > 0 && value.length <= 256 && !/[\x00-\x1f\x7f]/.test(value);
 const MODELS = new Set(['qwen3.5-omni-plus-realtime', 'qwen3.5-omni-flash-realtime', 'qwen3.8-omni-flash-realtime']);
 const REGIONS = Object.freeze({ beijing: 'cn-beijing', singapore: 'ap-southeast-1' });
+const VAD = Object.freeze({ type: 'server_vad', threshold: 0.5, silence_duration_ms: 800 });
+// 0.2 s of 16 kHz mono PCM16 silence. The provider forbids response.create in VAD mode, so a
+// call that must open with the model speaking starts in manual mode: commit this, then ask.
+const OPENING_SILENCE = Buffer.alloc(6400).toString('base64');
 const DEFAULT_LIMITS = Object.freeze({
   maxChunkBytes: 32_000, maxBufferedAudioBytes: 3_840_000, maxSessionAudioBytes: 57_600_000,
   maxOutputChunkBytes: 192_000, maxOutputResponseBytes: 8_640_000, maxMessageBytes: 512_000,
@@ -141,7 +155,7 @@ export function createRealtimeProvider({ resolveCredential, socketFactory, onEve
     if (run.signal && run.abort) run.signal.removeEventListener('abort', run.abort);
     closeSocket(run.socket);
     if (!run.settled) { run.settled = true; run.reject(cause ?? error('cancelled', '语音连接已关闭', 499)); }
-    if (cause) emit(run, 'error', { code: cause.code, message: cause.message, status: cause.status });
+    if (cause) emit(run, 'error', { code: cause.code, message: cause.message, status: cause.status, ...(providerErrorCode(cause.detail) ? { detail: cause.detail } : {}) });
     emit(run, 'closed', { reason: cause?.code ?? 'closed' });
   }
   function send(run, payload) {
@@ -259,6 +273,18 @@ export function createRealtimeProvider({ resolveCredential, socketFactory, onEve
       return onToolCall({ ...meta, arguments: args, sessionId: run.sessionId, epoch: run.epoch, signal: call.controller.signal });
     }).then(value => settle(value), () => settle(undefined, 'tool-failed'));
   }
+  function finishOpening(run) {
+    run.opening = null;
+    if (!live(run) || run.inputSealed || run.finalization) return;
+    // Room sound captured while the interviewer spoke is not an answer; drop it, then let the
+    // server detect turns. An empty buffer is left alone so no clear is sent for nothing.
+    if (run.bufferedAudioBytes > 0) {
+      send(run, { type: 'input_audio_buffer.clear' });
+      run.committedAudioBytes = run.audioBytes; run.bufferedAudioBytes = 0;
+    }
+    run.vadRestorePending = true;
+    send(run, { type: 'session.update', session: { turn_detection: { ...VAD } } });
+  }
   function handle(run, event) {
     if (!object(event) || typeof event.type !== 'string') throw error('invalid-event', '语音服务返回了无效事件', 502);
     if (!id(event.event_id)) throw error('invalid-event', '语音事件缺少有效标识', 502);
@@ -269,7 +295,9 @@ export function createRealtimeProvider({ resolveCredential, socketFactory, onEve
       // Only the documented cancel race, correlated to our own cancellation,
       // is harmless. Never expose provider messages, params, headers or keys.
       if (run.cancelEventIds.has(event.error?.event_id) && event.error?.code === 'response_cancel_not_active') return;
-      throw error('provider-error', '语音服务拒绝了请求，请检查宿主语音设置', 502);
+      const detail = providerErrorCode(event.error?.code) ?? providerErrorCode(event.error?.type);
+      if (!run.ready) throw new RealtimeError('session-rejected', '语音服务没有接受会话设置，请检查所选模型和业务空间', 502, detail);
+      throw new RealtimeError('provider-error', '语音服务拒绝了请求，请检查宿主语音设置', 502, detail);
     }
     if (event.type === 'session.created') {
       if (run.updateSent) return;
@@ -280,12 +308,16 @@ export function createRealtimeProvider({ resolveCredential, socketFactory, onEve
         audio: { input: { format: { type: 'pcm', sample_rate: 16000 } }, output: { format: { type: 'pcm', sample_rate: 24000 } } },
         input_audio_format: 'pcm', output_audio_format: 'pcm',
         input_audio_transcription: { model: 'qwen3-asr-flash-realtime' },
-        turn_detection: { type: 'server_vad', threshold: 0.5, silence_duration_ms: 800 },
-        enable_search: false, tools: [...whitelist.values()].map(tool => ({ type: 'function', function: tool })),
+        // An opening call starts in manual mode and switches to VAD after the model's first reply.
+        turn_detection: run.opening ? null : { ...VAD },
+        // The provider refuses enable_search together with tools, and lists function tools
+        // for some models only: send tools only when this call has any, search off otherwise.
+        ...(whitelist.size ? { tools: [...whitelist.values()].map(tool => ({ type: 'function', function: tool })) } : { enable_search: false }),
       } });
       run.instructions = ''; return;
     }
     if (event.type === 'session.updated') {
+      if (run.ready && run.vadRestorePending && object(event.session?.turn_detection)) { run.vadRestorePending = false; return; }
       if (run.ready && run.finalization?.waitingForVad) {
         if (event.session?.id !== run.providerSessionId || event.session.turn_detection !== null) {
           throw error('invalid-session', '语音服务未确认停止自动问答', 502);
@@ -294,7 +326,9 @@ export function createRealtimeProvider({ resolveCredential, socketFactory, onEve
       }
       if (!run.updateSent || run.ready) return;
       const session = event.session;
-      if (!object(session) || session.id !== run.providerSessionId || (session.model && session.model !== run.config.model)
+      // The echoed model name is not checked: providers report dated snapshot names
+      // (qwen3.5-omni-plus-realtime-2026-…) for the model that was asked for.
+      if (!object(session) || session.id !== run.providerSessionId
         || (session.input_audio_format && session.input_audio_format !== 'pcm')
         || (session.output_audio_format && session.output_audio_format !== 'pcm')
         || (session.audio?.input?.format?.sample_rate && session.audio.input.format.sample_rate !== 16000)
@@ -302,11 +336,25 @@ export function createRealtimeProvider({ resolveCredential, socketFactory, onEve
         throw error('invalid-session', '语音服务未确认所需音频设置', 502);
       }
       run.ready = true; run.phase = 'ready'; clearTimeout(run.connectTimer);
+      if (run.opening) {
+        // Documented manual flow: append, commit, then response.create once the commit is confirmed.
+        run.opening = { state: 'committing', itemId: null, responseId: null };
+        run.requestPending = true; armResponseStartTimeout(run);
+        send(run, { type: 'input_audio_buffer.append', audio: OPENING_SILENCE });
+        send(run, { type: 'input_audio_buffer.commit' });
+      }
       emit(run, 'ready', { inputSampleRate: 16000, outputSampleRate: 24000, format: 'pcm16', channels: 1 });
       if (live(run)) { run.settled = true; run.resolve(snapshot(run)); }
       return;
     }
     if (!run.ready) return;
+    if (run.opening?.state === 'committing' && event.type === 'input_audio_buffer.committed') {
+      // The opening silence is not a candidate turn: no turn, transcript or speech events for it.
+      if (!id(event.item_id)) throw error('invalid-event', '语音服务返回了无效轮次', 502);
+      run.opening.itemId = run.openingItemId = event.item_id; run.opening.state = 'responding'; run.responseAllowed = true;
+      send(run, { type: 'response.create' }); return;
+    }
+    if (run.openingItemId && event.item_id === run.openingItemId && !event.type.startsWith('response.')) return;
     const base = { providerEventId: event.event_id, ...(id(event.item_id) ? { itemId: event.item_id } : {}) };
     if (event.type === 'input_audio_buffer.speech_started') {
       const item = turn(run, event.item_id, true);
@@ -349,6 +397,7 @@ export function createRealtimeProvider({ resolveCredential, socketFactory, onEve
       if (!id(responseId)) throw error('invalid-event', '语音服务回复标识无效', 502);
       if (run.responses.has(responseId)) return;
       if (run.responses.size >= limits.maxResponses) throw error('session-limit', '本次语音回复已达上限', 409);
+      if (run.opening?.state === 'responding' && !run.opening.responseId) run.opening.responseId = responseId;
       const response = { turnId: run.turnId, cancelled: run.inputSealed || !run.responseAllowed, done: false, audioBytes: 0,
         toolCount: 0, pendingTools: 0, continued: false, finals: new Set(), timer: null };
       run.responses.set(responseId, response);
@@ -365,6 +414,7 @@ export function createRealtimeProvider({ resolveCredential, socketFactory, onEve
       emit(run, 'response-started', { ...base, responseId, turnId: response.turnId }); return;
     }
     const responseId = event.response_id ?? event.response?.id;
+    if (event.type === 'response.done' && run.opening?.responseId && run.opening.responseId === responseId) finishOpening(run);
     const response = run.responses.get(responseId);
     if (!response || response.cancelled || response.done) return;
     const meta = { ...base, responseId, turnId: response.turnId };
@@ -395,14 +445,14 @@ export function createRealtimeProvider({ resolveCredential, socketFactory, onEve
     emit(run, type, { ...meta, ...(type.endsWith('-delta') ? { delta: textValue(event.delta) }
       : type === 'output-transcript' ? { text: textValue(event.transcript ?? event.text) } : {}) });
   }
-  async function connect({ config, sessionId, epoch, instructions, signal } = {}) {
+  async function connect({ config, sessionId, epoch, instructions, signal, opening = false } = {}) {
     const selected = validateRealtimeConfig(config);
-    if (!id(sessionId) || !Number.isSafeInteger(epoch) || epoch < 0 || epoch <= lastEpoch
+    if (!id(sessionId) || !Number.isSafeInteger(epoch) || epoch < 0 || epoch <= lastEpoch || typeof opening !== 'boolean'
       || (signal !== undefined && !(signal instanceof AbortSignal))
       || typeof instructions !== 'string' || !instructions.trim() || instructions.length > 32_000) throw error('invalid-session', '语音会话参数或连接代次无效');
     if (current && live(current)) throw error('already-connected', '当前已有语音连接', 409);
     lastEpoch = epoch;
-    const run = { config: selected, sessionId, epoch, instructions, signal, phase: 'connecting', controller: new AbortController(),
+    const run = { config: selected, sessionId, epoch, instructions, signal, opening, vadRestorePending: false, phase: 'connecting', controller: new AbortController(),
       ended: false, ready: false, updateSent: false, turnId: 0, outgoing: 0, lastSeq: -1, bufferedAudioBytes: 0, audioBytes: 0, committedAudioBytes: 0,
       responseAllowed: true, requestPending: false, events: new Set(), cancelEventIds: new Set(), items: new Map(), responses: new Map(), calls: new Map(), listeners: [] };
     current = run;

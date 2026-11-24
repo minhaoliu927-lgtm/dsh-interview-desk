@@ -32,6 +32,52 @@ export function Modal({ title, children, onClose, t, busy = false }) {
   </section></div>;
 }
 
+/** Keyboard behaviour shared by dialogs and side sheets: Escape closes, Tab stays inside. */
+function useTrap(ref, onClose, busy) {
+  React.useEffect(() => {
+    const previous = document.activeElement;
+    (ref.current?.querySelector('[data-autofocus]') || ref.current?.querySelector('input,textarea,select') || ref.current?.querySelector('button'))?.focus();
+    return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
+  }, []);
+  return event => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); if (!busy) onClose(); }
+    if (event.key !== 'Tab') return;
+    const controls = [...ref.current.querySelectorAll('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled),a[href],[tabindex="0"]')];
+    const first = controls[0], last = controls.at(-1);
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  };
+}
+
+const CloseIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>;
+
+/** A panel that slides in from the right over the page. Clicking outside closes it. */
+export function Sheet({ title, children, onClose, t, busy = false, wide = false }) {
+  const ref = React.useRef(null);
+  const keydown = useTrap(ref, onClose, busy);
+  const titleId = React.useId();
+  return <div className="zj-scrim is-side" onKeyDown={keydown} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <section ref={ref} className={`zj-sheet${wide ? ' is-wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <header className="zj-sheet-head"><h2 id={titleId}>{title}</h2><button type="button" className="zj-icon-btn" aria-label={t('close')} disabled={busy} onClick={onClose}><CloseIcon/></button></header>
+      <div className="zj-sheet-body">{children}</div>
+    </section>
+  </div>;
+}
+
+/** A centred window, used for settings. */
+export function Window({ title, children, onClose, t, busy = false, footer = null }) {
+  const ref = React.useRef(null);
+  const keydown = useTrap(ref, onClose, busy);
+  const titleId = React.useId();
+  return <div className="zj-scrim" onKeyDown={keydown} onMouseDown={event => { if (event.target === event.currentTarget && !busy) onClose(); }}>
+    <section ref={ref} className="zj-window" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <header className="zj-window-head"><h2 id={titleId}>{title}</h2><button type="button" className="zj-icon-btn" aria-label={t('close')} onClick={onClose}><CloseIcon/></button></header>
+      <div className="zj-window-body">{children}</div>
+      {footer && <footer className="zj-window-foot">{footer}</footer>}
+    </section>
+  </div>;
+}
+
 export function Tabs({ values, active, onChange, t }) {
   const navigate = event => {
     if (!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
@@ -46,6 +92,41 @@ export function Tabs({ values, active, onChange, t }) {
 
 export function FormFooter({ t, busy, disabled = false, onClose, submit = 'save', saving = false }) {
   return <div className="zj-dialog-foot"><Button disabled={saving} onClick={onClose}>{t('cancel')}</Button><Button type="submit" primary disabled={busy || disabled}>{t(busy ? 'processing' : submit)}</Button></div>;
+}
+
+/** A version imported from a file the user uploaded (not pasted, edited or rewritten text). */
+export function hasOriginalFile(version) {
+  const source = version?.source;
+  return Boolean(source?.originalFileId && source?.metadataFileId && String(source.inputKind || '').startsWith('uploaded-'));
+}
+
+const FILE_KINDS = { 'application/pdf': ['PDF', 'deskFileKindPdf'], 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['DOCX', 'deskFileKindDocx'],
+  'image/png': ['PNG', 'deskFileKindImage'], 'image/jpeg': ['JPG', 'deskFileKindImage'], 'text/plain': ['TXT', 'deskFileKindText'] };
+
+/**
+ * The uploaded file itself, not the text read from it. Preview opens the
+ * original; it is a read, so it stays available while other work runs.
+ */
+export function OriginalFile({ entry, t, onPreview, children }) {
+  const { material, version } = entry;
+  const [state, setState] = React.useState('idle');
+  const alive = React.useRef(true);
+  React.useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const [badge, kind] = FILE_KINDS[version.source?.mime] || ['FILE', 'deskFileKindOther'];
+  const pages = Number.isInteger(version.source?.pageCount) && version.source.pageCount > 0 ? t('deskFilePages', { count: version.source.pageCount }) : null;
+  const preview = async () => {
+    if (!onPreview || state === 'opening') return;
+    setState('opening');
+    try { await onPreview(version.id); if (alive.current) setState('idle'); }
+    catch { if (alive.current) setState('failed'); }
+  };
+  return <div className={`zj-doc zj-file${version.confirmed ? ' is-confirmed' : ''}`} data-original-file="">
+    <div className="zj-file-row"><span className="zj-file-badge" aria-hidden="true">{badge}</span>
+      <div className="zj-file-name"><strong>{material.title}</strong><span className="zj-hint">{pages || t(kind)}</span></div>
+      {onPreview && <Button small onClick={() => { void preview(); }} disabled={state === 'opening'}>{t(state === 'opening' ? 'deskFileOpening' : 'deskFilePreview')}</Button>}</div>
+    {state === 'failed' && <p className="zj-hint is-warn" role="status">{t('deskFileOpenFailed')}</p>}
+    {children}
+  </div>;
 }
 
 // Lock synchronously: two clicks can arrive before React renders disabled controls.

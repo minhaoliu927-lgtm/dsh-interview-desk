@@ -1,5 +1,5 @@
 import React from 'react';
-import { createApi, saveDownload } from './api.js';
+import { createApi, openOriginalFile, saveDownload } from './api.js';
 import { createCareerClient } from './model.js';
 import { careerSessionProvider } from './session.js';
 import { interviewPrompt, submitNativePrompt } from './native-interview.js';
@@ -8,7 +8,7 @@ import { DSH_VOICE_BUNDLE, enableDshVoice } from './voice/setup.js';
 import { Conversation } from './native-chat.jsx';
 import { App } from './workbench.jsx';
 import { Mark } from './components.jsx';
-import { registerRealtimeSettings } from './realtime-settings.jsx';
+import { createRealtimeSettingsActions, registerRealtimeSettings } from './realtime-settings.jsx';
 import { appendNativeDraft } from './desk-context.js';
 import { mountBetterSidebar } from './sidebar-integration.jsx';
 import { en, zh } from '../locale/dictionaries.js';
@@ -39,6 +39,7 @@ export function apply(ctx) {
     readSource: versionId => api.request('material.source', { versionId }),
     loadOriginal: api.original,
     async downloadOriginal(versionId) { saveDownload(await api.original(versionId)); },
+    openOriginal: versionId => openOriginalFile(api, versionId),
     openVoiceSettings: () => { const navigation = ctx.get('pluginNavigation'); navigation?.openBundle(DSH_VOICE_BUNDLE); return Boolean(navigation); },
     enableVoiceInput: ({ signal } = {}) => enableDshVoice({ getManager: () => ctx.get('remote.pluginManager'),
       openSettings: () => actions.openVoiceSettings(), signal }),
@@ -68,10 +69,22 @@ export function apply(ctx) {
     },
     async download(kind, id, format) { saveDownload(await api.exportDocument(kind, id, format)); },
   };
+  // The workbench's own settings window writes through the same public form and
+  // credential services as the DSH plugin settings page. Rebind only when they change.
+  let settings;
+  const workbench = () => {
+    const form = ctx.get?.('configForms')?.get?.('dsh-interview-desk'), credentials = ctx.get?.('remote.credentials') ?? ctx.get?.('remote')?.credentials;
+    if (!settings || settings.form !== form || settings.credentials !== credentials) {
+      const { hooks, saveSettings, describeCredential, storeCredential, testAudio, cancelAudio } = createRealtimeSettingsActions(form, credentials, api);
+      settings = { form, credentials, value: { ...actions, hooks: { ...actions.hooks, ...hooks },
+        settingsActions: { saveSettings, describeCredential, storeCredential, testAudio, cancelAudio } } };
+    }
+    return settings.value;
+  };
   ctx.effect(() => ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main', key: 'zhijing', locale: namespace,
     children: { 'zhijing.conversation': { kind: 'single', scope: 'session' } },
-    inject: () => actions,
+    inject: workbench,
   }, App)), 'zhijing: workbench');
   ctx.effect(() => ctx.slots.inject('zhijing.conversation', () => ctx.slots.register({
     name: 'zhijing.conversation', locale: namespace,

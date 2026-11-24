@@ -29,6 +29,10 @@ async function ready(socket) {
   assert.equal(socket.sent[0].type, 'session.update');
   socket.event({ type: 'session.updated', session: { id: 'provider-session', model: config.model,
     input_audio_format: 'pcm', output_audio_format: 'pcm', audio: { output: { format: { sample_rate: 24000 } } } } });
+  // Manual opening: VAD mode forbids response.create, so the probe commits a short silence and asks after the commit.
+  await tick(); assert.deepEqual(socket.sent.slice(1).map(event => event.type), ['input_audio_buffer.append', 'input_audio_buffer.commit']);
+  assert.equal(socket.sent.filter(event => event.type === 'response.create').length, 0, 'no reply is requested before the commit is confirmed');
+  socket.event({ type: 'input_audio_buffer.committed', item_id: 'probe-silence' });
   await tick(); assert.equal(socket.sent.filter(event => event.type === 'response.create').length, 1); response(socket);
 }
 function fixture(t, options = {}) {
@@ -62,8 +66,14 @@ test('production protocol requires handshake, actual nonzero PCM and subtitles, 
   assert.equal(f.connections[0].args.headers.Authorization, 'Bearer fixture-secret');
   assert.match(f.connections[0].url, /^wss:\/\/probe-fixture\.cn-beijing\.maas\.aliyuncs\.com\//);
   const sent = run.socket.sent;
-  assert.match(sent[0].session.instructions, /你好，音频测试成功/); assert.deepEqual(sent[0].session.tools, []);
-  assert.equal(sent.some(event => event.type.startsWith('input_audio_buffer.') || event.type === 'conversation.item.create'), false);
+  // The probe offers no tools, so the session carries no tools field at all (the provider refuses tools with search settings).
+  assert.match(sent[0].session.instructions, /你好，音频测试成功/); assert.equal('tools' in sent[0].session, false);
+  // The session opens in manual mode with 0.2 s of zero PCM; nothing else is sent as input, and VAD is restored after the reply.
+  assert.equal(sent[0].session.turn_detection, null);
+  assert.deepEqual(sent.map(event => event.type).slice(0, 5), ['session.update', 'input_audio_buffer.append', 'input_audio_buffer.commit', 'response.create', 'session.update']);
+  assert.deepEqual(Buffer.from(sent[1].audio, 'base64'), Buffer.alloc(6400));
+  assert.equal(sent[4].session.turn_detection.type, 'server_vad');
+  assert.equal(sent.some(event => event.type === 'conversation.item.create' || event.type === 'input_audio_buffer.clear'), false);
   assert.equal(JSON.stringify(result).includes('fixture-secret'), false); assert.equal(JSON.stringify(result).includes(config.workspace), false);
   released(run.socket);
 });
@@ -208,7 +218,7 @@ async function hostFixture(t, options = {}) {
   const base = resolve('.runtime/tests/realtime-probe'); await mkdir(base, { recursive: true });
   const directory = await mkdtemp(join(base, 'case-')), sockets = [], credentialRefs = [], touched = [];
   const ctx = { get(name) {
-    if (name === 'credentials') return { resolve: async ref => { credentialRefs.push(ref); return { value: 'fixture-secret' }; } };
+    if (name === 'credentials') return { resolve: async ref => { credentialRefs.push(ref); return { value: 'fixture-secret' }; }, ...options.credentials };
     if (name === 'connection') return { requestRejection: ({ headers }) => headers.authorization === 'fixture-auth' ? undefined : 401 };
     touched.push(name); return undefined;
   } };
@@ -225,6 +235,35 @@ test('Host action uses saved official credentials without an interview or native
   assert.deepEqual(await f.services.dispatch('state'), before); assert.deepEqual(await readdir(f.directory), files);
   assert.equal(f.touched.some(name => ['sessions', 'sessionPersistence', 'workspaceRegistry', 'speechToText', 'speechController', 'llm'].includes(name)), false);
   released(f.sockets[0]);
+});
+
+test('voice counts as connected only after a test passes with the saved settings, and a failure or a new key clears it', async t => {
+  const f = await hostFixture(t, { credentials: { describe: async () => ({ configured: true }) } }), services = f.services;
+  const catalog = () => services.dispatch('realtime.catalog');
+  assert.equal((await catalog()).configured, true); assert.equal((await catalog()).verified, false, 'saved settings alone are not a connection');
+  const passing = services.dispatch('realtime.test', {}, { requestId: 'verify-pass' }); passing.catch(() => {});
+  await tick(); await ready(f.sockets.at(-1)); transcript(f.sockets.at(-1)); audio(f.sockets.at(-1)); done(f.sockets.at(-1)); await passing;
+  assert.equal((await catalog()).verified, true);
+  assert.equal(JSON.stringify(await readdir(f.directory)).includes('voice-check.json'), true);
+  const failing = services.dispatch('realtime.test', {}, { requestId: 'verify-fail' }); failing.catch(() => {});
+  await tick(); f.sockets.at(-1).event({ type: 'session.created', session: { id: 'provider-session' } });
+  f.sockets.at(-1).event({ type: 'error', error: { code: 'invalid_value', message: 'fixture-secret' } });
+  await assert.rejects(failing, cause => { assert.equal(cause.code, 'session-rejected'); assert.equal(publicError(cause).detail, 'invalid_value');
+    assert.equal(JSON.stringify(publicError(cause)).includes('fixture-secret'), false); return true; });
+  assert.equal((await catalog()).verified, false, 'a failed test is not a connection'); assert.equal((await catalog()).failed, true);
+  // The reason survives closing Settings: the catalog keeps the short code, never the provider's message.
+  assert.equal((await catalog()).failureCode, 'session-rejected · invalid_value');
+  // The rejection seen on the real account: setup accepted, then the provider refuses the next request.
+  const refused = services.dispatch('realtime.test', {}, { requestId: 'verify-refused' }); refused.catch(() => {});
+  await tick(); await ready(f.sockets.at(-1));
+  f.sockets.at(-1).event({ type: 'error', error: { type: 'invalid_request_error', message: 'fixture-secret' } });
+  await assert.rejects(refused, { code: 'provider-error' });
+  assert.equal((await catalog()).failureCode, 'provider-error · invalid_request_error');
+  const again = services.dispatch('realtime.test', {}, { requestId: 'verify-again' }); again.catch(() => {});
+  await tick(); await ready(f.sockets.at(-1)); transcript(f.sockets.at(-1)); audio(f.sockets.at(-1)); done(f.sockets.at(-1)); await again;
+  assert.equal((await catalog()).verified, true); assert.equal((await catalog()).failureCode, undefined, 'a pass clears the old reason');
+  await services.dispatch('realtime.forget');
+  assert.equal((await catalog()).verified, false, 'saving a new key or new settings asks for a new test');
 });
 
 test('Host exposes BUSY, task.cancel and shutdown cleanup for probes and rejects work after close', async t => {
