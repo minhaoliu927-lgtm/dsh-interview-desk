@@ -5,8 +5,8 @@
     "en": "Interview Desk"
   },
   "description": {
-    "zh": "职镜AI 自有插件索引。使用固定版本的预构建包安装。",
-    "en": "The Interview Desk plugin index, with prebuilt packages pinned to immutable Git commits."
+    "zh": "职镜AI 的插件索引：加一次，在「发现」里安装和更新。",
+    "en": "The Interview Desk plugin index: add it once, then install and update from Discover."
   },
   "metadata": {
     "categories": {
@@ -26,8 +26,8 @@
         "en": "Interview Desk"
       },
       "description": {
-        "zh": "DSH 原生求职工作台：个人资料、简历分析与修改、文字和语音模拟面试。",
-        "en": "A native DSH career workbench for personal materials, resume review, job fit, text and voice interviews, and reports. Development preview."
+        "zh": "职镜AI：贴上岗位要求和简历，评分、改简历，再用语音或文字模拟面一场。DeepSeek Harness 插件。",
+        "en": "Add the job description and your resume, score the resume, practise a voice or text interview, then review it. A job-hunting plugin for DeepSeek Harness."
       },
       "author": "minhaoliu927-lgtm",
       "homepage": "https://github.com/minhaoliu927-lgtm/dsh-interview-desk#readme",
@@ -49,12 +49,10 @@
       },
       "versions": [
         {
-          "version": "0.1.0-dev.11",
-          "publishTimestamp": 1795352036,
+          "version": "0.2.0",
+          "publishTimestamp": 1795499487,
           "source": {
-            "type": "git",
-            "url": "https://github.com/minhaoliu927-lgtm/dsh-interview-desk",
-            "commit": "79dc03c71c686e799f89dc794e102e5c67554622"
+            "type": "npm"
           },
           "engines": {
             "dsh": ">=0.2.2-rc.1 <0.3.0"
