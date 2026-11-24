@@ -3,7 +3,7 @@
   "name": "dsh-interview-desk",
   "version": "0.2.0",
   "license": "MIT",
-  "inventorySha256": "0dde04a52994f931e9e36947044b0663d3223922236105de7d25077458559b76",
+  "inventorySha256": "08bd8716f8b85fe202c8e62f0b2d76e80dec62a5e7bd5ec2f7d339fe4ea311f5",
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -12,8 +12,8 @@
     },
     {
       "path": ".github/workflows/release.yml",
-      "bytes": 6272,
-      "sha256": "d01ff407c4b1851f7928feed649fdb36a40ce14a55812041c0fd84ee4f5464d2"
+      "bytes": 6392,
+      "sha256": "c6957834928dac1603a975927c61018705d0ecdbe26f0c4eba2fe3bb2a5611ad"
     },
     {
       "path": ".gitignore",

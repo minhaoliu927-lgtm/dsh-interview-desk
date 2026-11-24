@@ -82,7 +82,8 @@ jobs:
         run: |
           # Trusted Publishing 要 npm 11.5.1 及以上
           node -e "const [a,b,c]=process.argv[1].split('.').map(Number); process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)" "$(npm --version)" || npm install -g npm@11
-          npm publish "release/${{ steps.plan.outputs.file }}" --access public --tag "${{ steps.plan.outputs.tag }}"
+          # 路径必须以 ./ 开头：写成 release/x.tgz 会被 npm 当成 GitHub 仓库简写（用户/仓库）
+          npm publish "./release/${{ steps.plan.outputs.file }}" --access public --tag "${{ steps.plan.outputs.tag }}"
 
       - name: 建 GitHub Release
         if: steps.plan.outputs.release == 'true'
